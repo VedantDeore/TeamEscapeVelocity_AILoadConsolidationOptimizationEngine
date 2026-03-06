@@ -1,4 +1,4 @@
-# 🚚 LORRI — AI Load Consolidation Optimization Engine
+# 🚚 LORRI  - AI Load Consolidation Optimization Engine
 
 Lorri is an **AI-powered logistics optimization engine** that intelligently consolidates shipments, maximizes vehicle capacity, and reduces transportation costs and carbon emissions.
 
