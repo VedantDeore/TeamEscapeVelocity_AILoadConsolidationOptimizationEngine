@@ -180,9 +180,5 @@ Example interaction:
 | Empty Miles | −35% |
 | Carbon Emissions | −25% |
 
----
 
-# 🚀 Installation
-
-## Clone Repository
 
