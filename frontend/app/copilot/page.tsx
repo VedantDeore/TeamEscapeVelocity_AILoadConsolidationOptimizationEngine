@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   MessageSquare, Send, Sparkles, Bot, User, Map,
-  BarChart3, Zap, Loader2, Copy, ThumbsUp, ThumbsDown
+  BarChart3, Zap, Loader2, Copy, ThumbsUp, ThumbsDown,
+  ArrowRight, Activity
 } from 'lucide-react';
 import {
   mockChatHistory, suggestedPrompts, type ChatMessage
@@ -28,14 +29,11 @@ export default function CopilotPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  useEffect(() => { scrollToBottom(); }, [messages]);
 
   const handleSend = (text?: string) => {
     const query = text || input;
     if (!query.trim()) return;
-
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: 'user',
@@ -45,12 +43,9 @@ export default function CopilotPage() {
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsTyping(true);
-
-    // Simulate AI response
     setTimeout(() => {
       const response = aiResponses[query] ||
-        `I analyzed your query: "${query}"\n\nBased on the current logistics data, here are my findings:\n\n📊 **Analysis Complete**\n• Processed 150 active shipments across 15 cities\n• Identified 3 optimization opportunities\n• Estimated savings potential: ₹12,000-₹18,000\n\nWould you like me to dive deeper into any specific aspect of this analysis?`;
-
+        `I analyzed your query: "${query}"\n\nBased on the current logistics data, here are my findings:\n\n📊 **Analysis Complete**\n• Processed 150 active shipments across 15 cities\n• Identified 3 optimization opportunities\n• Estimated savings potential: ₹12,000–₹18,000\n\nWould you like me to dive deeper into any specific aspect of this analysis?`;
       const aiMsg: ChatMessage = {
         id: `msg-${Date.now() + 1}`,
         role: 'assistant',
@@ -67,23 +62,22 @@ export default function CopilotPage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
   return (
     <>
+      {/* ── Page Header ── */}
       <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <div style={{
-            width: '36px', height: '36px',
-            background: 'var(--gradient-primary)',
-            borderRadius: 'var(--radius-md)',
+            width: '42px', height: '42px',
+            background: 'linear-gradient(135deg, #635BFF, #8B5CF6)',
+            borderRadius: '10px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(99,91,255,0.35)',
           }}>
-            <Sparkles size={18} color="white" />
+            <Sparkles size={20} color="white" />
           </div>
           <div>
             <h1 className="page-title">AI Co-Pilot</h1>
@@ -94,37 +88,49 @@ export default function CopilotPage() {
           <div style={{
             width: '8px', height: '8px', borderRadius: '50%',
             background: '#34d399',
-            boxShadow: '0 0 8px rgba(52, 211, 153, 0.5)',
           }} />
-          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Groq Mixtral-8x7B Online</span>
+          <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+            Groq Mixtral-8x7B · Online
+          </span>
         </div>
       </div>
 
-      <div className="chat-container">
+      {/* ── Chat Container ── */}
+      <div className="chat-container" style={{ margin: '24px 32px' }}>
         {/* Messages */}
         <div className="chat-messages">
           {messages.map((msg) => (
-            <div key={msg.id} className="animate-slide-up" style={{
-              display: 'flex',
-              gap: '12px',
-              alignItems: 'flex-start',
-              flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
-            }}>
+            <div
+              key={msg.id}
+              className="animate-slide-up"
+              style={{
+                display: 'flex',
+                gap: '12px',
+                alignItems: 'flex-start',
+                flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+              }}
+            >
               {/* Avatar */}
               <div style={{
-                width: '32px', height: '32px', borderRadius: 'var(--radius-md)',
-                background: msg.role === 'user' ? 'var(--bg-tertiary)' : 'var(--gradient-primary)',
+                width: '34px', height: '34px', borderRadius: '9px',
+                background: msg.role === 'user'
+                  ? 'var(--bg-secondary)'
+                  : 'linear-gradient(135deg, #635BFF, #8B5CF6)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
+                border: msg.role === 'user' ? '1px solid var(--border-primary)' : 'none',
+                boxShadow: msg.role === 'assistant' ? '0 2px 8px rgba(99,91,255,0.30)' : 'none',
               }}>
-                {msg.role === 'user' ? <User size={14} color="var(--text-secondary)" /> : <Bot size={14} color="white" />}
+                {msg.role === 'user'
+                  ? <User size={15} color="var(--text-secondary)" />
+                  : <Bot size={15} color="white" />
+                }
               </div>
 
-              <div style={{ maxWidth: '70%' }}>
+              <div style={{ maxWidth: '72%' }}>
                 <div className={`chat-bubble ${msg.role}`}>
                   <div style={{ whiteSpace: 'pre-wrap' }}>
                     {msg.content.split('\n').map((line, i) => {
-                      // Simple markdown-like rendering
                       const boldLine = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
                       return <p key={i} dangerouslySetInnerHTML={{ __html: boldLine }} style={{ margin: '2px 0' }} />;
                     })}
@@ -133,7 +139,7 @@ export default function CopilotPage() {
 
                 {/* Action Buttons */}
                 {msg.actions && msg.actions.length > 0 && (
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
                     {msg.actions.map((action) => (
                       <button key={action.label} className="btn btn-sm btn-secondary">
                         {action.type === 'map' ? <Map size={12} /> : action.type === 'optimize' ? <Zap size={12} /> : <BarChart3 size={12} />}
@@ -146,11 +152,9 @@ export default function CopilotPage() {
                   </div>
                 )}
 
-                {/* Timestamp */}
                 <div style={{
-                  fontSize: '10px',
-                  color: 'var(--text-tertiary)',
-                  marginTop: '6px',
+                  fontSize: '10px', color: 'var(--text-tertiary)',
+                  marginTop: '5px',
                   textAlign: msg.role === 'user' ? 'right' : 'left',
                 }}>
                   {msg.timestamp}
@@ -163,30 +167,26 @@ export default function CopilotPage() {
           {isTyping && (
             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
               <div style={{
-                width: '32px', height: '32px', borderRadius: 'var(--radius-md)',
-                background: 'var(--gradient-primary)',
+                width: '34px', height: '34px', borderRadius: '9px',
+                background: 'linear-gradient(135deg, #635BFF, #8B5CF6)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
+                flexShrink: 0, boxShadow: '0 2px 8px rgba(99,91,255,0.30)',
               }}>
-                <Bot size={14} color="white" />
+                <Bot size={15} color="white" />
               </div>
-              <div className="chat-bubble assistant" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{
-                  display: 'flex', gap: '4px',
-                }}>
-                  {[0, 1, 2].map(i => (
-                    <div key={i} style={{
-                      width: '8px', height: '8px', borderRadius: '50%',
-                      background: 'var(--text-tertiary)',
-                      animation: `pulse-glow 1.2s ease infinite ${i * 0.15}s`,
-                    }} />
-                  ))}
-                </div>
+              <div className="chat-bubble assistant" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{
+                    width: '7px', height: '7px', borderRadius: '50%',
+                    background: 'var(--lorri-primary)',
+                    animation: `pulse-dot 1.2s ease infinite ${i * 0.18}s`,
+                    opacity: 0.7,
+                  }} />
+                ))}
                 <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Analyzing...</span>
               </div>
             </div>
           )}
-
           <div ref={messagesEndRef} />
         </div>
 
@@ -205,9 +205,9 @@ export default function CopilotPage() {
               className="chat-send-btn"
               onClick={() => handleSend()}
               disabled={!input.trim() || isTyping}
-              style={{ opacity: input.trim() ? 1 : 0.5 }}
+              style={{ opacity: input.trim() ? 1 : 0.45 }}
             >
-              <Send size={18} />
+              {isTyping ? <Loader2 size={16} className="loading-spinner" /> : <Send size={16} />}
             </button>
           </div>
 
