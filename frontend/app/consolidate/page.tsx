@@ -3,12 +3,12 @@
 import { useState } from 'react';
 import {
   Layers, Zap, ChevronDown, ChevronUp, Truck,
-  TrendingDown, TrendingUp, Check, X, Edit,
-  ArrowRight, Loader2, Settings2, Package
+  Check, X, Edit, ArrowRight, Loader2, Settings2, Package,
+  TrendingUp, TrendingDown
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell
+  ResponsiveContainer
 } from 'recharts';
 import { mockConsolidationPlan, type Cluster } from '@/lib/mock-data';
 
@@ -16,15 +16,13 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload) return null;
   return (
     <div style={{
-      background: 'var(--bg-elevated)',
-      border: '1px solid var(--border-primary)',
-      borderRadius: 'var(--radius-md)',
-      padding: '12px 16px',
-      fontSize: '12px',
+      background: '#ffffff', border: '1px solid #e3e8ee',
+      borderRadius: '8px', padding: '12px 16px', fontSize: '12px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
     }}>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>{label}</p>
+      <p style={{ color: '#8792a2', marginBottom: '6px' }}>{label}</p>
       {payload.map((entry: any, i: number) => (
-        <p key={i} style={{ color: entry.fill, fontWeight: 600 }}>
+        <p key={i} style={{ color: entry.fill, fontWeight: 700 }}>
           {entry.name}: {typeof entry.value === 'number' ? entry.value.toLocaleString() : entry.value}
         </p>
       ))}
@@ -53,14 +51,14 @@ export default function ConsolidationPage() {
   };
 
   const getUtilColor = (pct: number) => {
-    if (pct >= 80) return '#10b981';
-    if (pct >= 60) return '#f59e0b';
-    return '#ef4444';
+    if (pct >= 80) return '#0CAF60';
+    if (pct >= 60) return '#E5850B';
+    return '#DF1B41';
   };
 
   const beforeAfterData = [
     { metric: 'Trips', before: plan.tripsBefore, after: plan.tripsAfter },
-    { metric: 'Cost (₹K)', before: plan.totalCostBefore / 1000, after: plan.totalCostAfter / 1000 },
+    { metric: 'Cost (₹K)', before: Math.round(plan.totalCostBefore / 1000), after: Math.round(plan.totalCostAfter / 1000) },
     { metric: 'CO₂ (kg)', before: plan.co2Before, after: plan.co2After },
   ];
 
@@ -69,169 +67,158 @@ export default function ConsolidationPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Consolidation Engine</h1>
-          <p className="page-subtitle">AI-powered shipment clustering & vehicle assignment</p>
+          <p className="page-subtitle">AI-powered DBSCAN clustering & 3D bin-packing for maximum efficiency</p>
         </div>
         <button
           className="btn btn-primary btn-lg"
           onClick={handleRunConsolidation}
           disabled={isRunning}
         >
-          {isRunning ? (
-            <><Loader2 size={18} className="loading-spinner" style={{ border: 'none', borderTop: 'none' }} /> Running Engine...</>
-          ) : (
-            <><Zap size={18} /> Run Consolidation</>
-          )}
+          {isRunning
+            ? <><div className="loading-spinner" /> Running Engine...</>
+            : <><Zap size={16} /> Run Consolidation</>
+          }
         </button>
       </div>
 
       <div className="page-body">
-        {/* Constraints */}
+
+        {/* ── Engine Parameters ── */}
         <div className="card" style={{ marginBottom: '24px' }}>
           <div className="card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Settings2 size={16} style={{ color: 'var(--text-secondary)' }} />
+              <div style={{
+                width: '28px', height: '28px', borderRadius: '6px',
+                background: 'var(--lorri-primary-light)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Settings2 size={14} style={{ color: 'var(--lorri-primary)' }} />
+              </div>
               <span className="card-title">Engine Parameters</span>
             </div>
+            <span className="badge badge-primary">DBSCAN + 3D Bin-Pack</span>
           </div>
           <div className="card-body">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
-              <div>
-                <label className="label">Date Range</label>
-                <input className="input" type="date" defaultValue="2026-03-07" />
-              </div>
-              <div>
-                <label className="label">Max Detour %</label>
-                <select className="input select" defaultValue="15">
-                  <option value="10">10%</option>
-                  <option value="15">15%</option>
-                  <option value="20">20%</option>
-                  <option value="30">30%</option>
-                </select>
-              </div>
-              <div>
-                <label className="label">Vehicle Types</label>
-                <select className="input select" defaultValue="all">
-                  <option value="all">All Available</option>
-                  <option value="heavy">Heavy Trucks Only</option>
-                  <option value="medium">Medium Trucks Only</option>
-                </select>
-              </div>
-              <div>
-                <label className="label">Priority Handling</label>
-                <select className="input select" defaultValue="preserve">
-                  <option value="preserve">Preserve Priority</option>
-                  <option value="relax">Relax (cost-optimized)</option>
-                </select>
-              </div>
+              {[
+                { label: 'Date Range', type: 'date', defaultVal: '2026-03-07', isSelect: false },
+                { label: 'Max Detour %', type: '', defaultVal: '15', isSelect: true, opts: ['10%','15%','20%','30%'] },
+                { label: 'Vehicle Types', type: '', defaultVal: 'all', isSelect: true, opts: ['All Available','Heavy Trucks Only','Medium Trucks Only'] },
+                { label: 'Priority Mode', type: '', defaultVal: 'preserve', isSelect: true, opts: ['Preserve Priority','Relax (cost-optimized)'] },
+              ].map((f) => (
+                <div key={f.label}>
+                  <label className="label">{f.label}</label>
+                  {f.isSelect ? (
+                    <select className="input">
+                      {f.opts!.map(o => <option key={o}>{o}</option>)}
+                    </select>
+                  ) : (
+                    <input className="input" type={f.type} defaultValue={f.defaultVal} />
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Loading Animation */}
+        {/* ── Loading State ── */}
         {isRunning && (
-          <div style={{
-            textAlign: 'center',
-            padding: '80px 24px',
-          }}>
+          <div style={{ textAlign: 'center', padding: '80px 24px' }}>
             <div style={{
-              width: '80px', height: '80px', margin: '0 auto 24px',
+              width: '72px', height: '72px', margin: '0 auto 24px',
+              background: 'var(--lorri-primary-light)',
               borderRadius: '50%',
-              background: 'rgba(14, 165, 233, 0.1)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              animation: 'pulse-glow 1.5s ease infinite',
             }}>
-              <Zap size={36} style={{ color: 'var(--lorri-primary)' }} />
+              <Zap size={32} style={{ color: 'var(--lorri-primary)' }} />
             </div>
-            <p style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
-              Running DBSCAN Clustering + 3D Bin Packing...
+            <p style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+              Running DBSCAN Clustering + 3D Bin Packing
             </p>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-              Analyzing 150 shipments across 15 cities • Optimizing vehicle assignments
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '28px' }}>
+              Analyzing 150 shipments across 15 cities · Optimizing vehicle assignments
             </p>
-            <div className="progress-bar" style={{ maxWidth: '400px', margin: '24px auto 0' }}>
-              <div className="progress-bar-fill green" style={{
-                width: '65%',
-                animation: 'shimmer 2s ease infinite',
-              }} />
+            <div className="progress-bar" style={{ maxWidth: '400px', margin: '0 auto' }}>
+              <div className="progress-bar-fill purple" style={{ width: '65%', background: 'linear-gradient(90deg, #635BFF, #8B5CF6)' }} />
             </div>
           </div>
         )}
 
-        {/* Results */}
+        {/* ── Results ── */}
         {showResults && !isRunning && (
           <div className="animate-slide-up">
-            {/* Before vs After */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr auto 1fr',
-              gap: '24px',
-              marginBottom: '24px',
-              alignItems: 'center',
-            }}>
-              {/* Before */}
-              <div className="card" style={{ textAlign: 'center', padding: '28px' }}>
-                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>
-                  Before Consolidation
+
+            {/* Before vs After + Chart Row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px', alignItems: 'start' }}>
+
+              {/* Before Card */}
+              <div className="card" style={{ textAlign: 'center' }}>
+                <div className="card-header" style={{ paddingBottom: '18px' }}>
+                  <div className="card-title" style={{ color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+                    Before Consolidation
+                  </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--lorri-danger)' }}>{plan.tripsBefore}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Total Trips</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--lorri-danger)' }}>58%</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Utilization</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--lorri-danger)' }}>₹4.5L</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Total Cost</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--lorri-danger)' }}>{plan.co2Before}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>CO₂ (kg)</div>
+                <div className="card-body">
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+                    {[
+                      { val: plan.tripsBefore, label: 'Total Trips' },
+                      { val: '58%', label: 'Utilization' },
+                      { val: '₹4.5L', label: 'Total Cost' },
+                      { val: `${plan.co2Before} kg`, label: 'CO₂' },
+                    ].map((m) => (
+                      <div key={m.label}>
+                        <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--lorri-danger)', letterSpacing: '-0.03em' }}>{m.val}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px' }}>{m.label}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              {/* Arrow */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                <ArrowRight size={28} style={{ color: 'var(--lorri-primary)' }} />
-                <span className="badge badge-success">Optimized</span>
+              {/* Arrow + Badge */}
+              <div className="hero-dark-section" style={{ textAlign: 'center', padding: '36px 24px' }}>
+                <div style={{ marginBottom: '12px' }}>
+                  <ArrowRight size={36} style={{ color: '#a5b4fc', margin: '0 auto' }} />
+                </div>
+                <div className="hero-dark-title" style={{ fontSize: '18px', marginBottom: '20px' }}>AI Optimized</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {[
+                    { label: 'Trips', pct: '▼ 34%', cls: 'green' },
+                    { label: 'Cost',  pct: '▼ 31%', cls: 'green' },
+                    { label: 'CO₂',   pct: '▼ 33%', cls: 'green' },
+                    { label: 'Utilization', pct: '▲ 29%', cls: 'purple' },
+                  ].map(s => (
+                    <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                      <span style={{ color: 'rgba(255,255,255,0.50)' }}>{s.label}</span>
+                      <span style={{ fontWeight: 700, color: '#34d399' }}>{s.pct}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              {/* After */}
-              <div className="card" style={{ textAlign: 'center', padding: '28px', borderColor: 'var(--border-accent)', boxShadow: 'var(--shadow-glow)' }}>
-                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--lorri-primary)', marginBottom: '16px' }}>
-                  After Consolidation
+              {/* After Card */}
+              <div className="card" style={{ textAlign: 'center', borderColor: 'rgba(99,91,255,0.30)', boxShadow: '0 0 0 3px rgba(99,91,255,0.08)' }}>
+                <div className="card-header" style={{ paddingBottom: '18px' }}>
+                  <div className="card-title" style={{ color: 'var(--lorri-primary)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+                    After Consolidation
+                  </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--lorri-success)' }}>
-                      {plan.tripsAfter}
-                      <span style={{ fontSize: '12px', fontWeight: 600, marginLeft: '6px' }}>▼34%</span>
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Total Trips</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--lorri-success)' }}>
-                      87%
-                      <span style={{ fontSize: '12px', fontWeight: 600, marginLeft: '6px' }}>▲29%</span>
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Utilization</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--lorri-success)' }}>
-                      ₹3.1L
-                      <span style={{ fontSize: '12px', fontWeight: 600, marginLeft: '6px' }}>▼31%</span>
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Total Cost</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--lorri-success)' }}>
-                      {plan.co2After}
-                      <span style={{ fontSize: '12px', fontWeight: 600, marginLeft: '6px' }}>▼33%</span>
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>CO₂ (kg)</div>
+                <div className="card-body">
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+                    {[
+                      { val: plan.tripsAfter, label: 'Total Trips', pct: '▼34%' },
+                      { val: '87%', label: 'Utilization', pct: '▲29%' },
+                      { val: '₹3.1L', label: 'Total Cost', pct: '▼31%' },
+                      { val: `${plan.co2After} kg`, label: 'CO₂', pct: '▼33%' },
+                    ].map((m) => (
+                      <div key={m.label}>
+                        <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--lorri-success)', letterSpacing: '-0.03em', lineHeight: 1 }}>
+                          {m.val}
+                        </div>
+                        <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--lorri-success)', marginTop: '2px' }}>{m.pct}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>{m.label}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -241,46 +228,73 @@ export default function ConsolidationPage() {
             <div className="card" style={{ marginBottom: '24px' }}>
               <div className="card-header">
                 <div className="card-title">Before vs After Comparison</div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <span className="badge badge-danger">Before</span>
+                  <span className="badge badge-success">After</span>
+                </div>
               </div>
-              <div className="card-body" style={{ height: '250px' }}>
+              <div className="card-body" style={{ height: '230px' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={beforeAfterData} barGap={8}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-secondary)" />
-                    <XAxis dataKey="metric" tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f7" />
+                    <XAxis dataKey="metric" tick={{ fill: '#8792a2', fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: '#8792a2', fontSize: 11 }} axisLine={false} tickLine={false} />
                     <Tooltip content={<CustomTooltip />} />
-                    <Bar dataKey="before" name="Before" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={32} />
-                    <Bar dataKey="after" name="After" fill="#10b981" radius={[4, 4, 0, 0]} barSize={32} />
+                    <Bar dataKey="before" name="Before" fill="#DF1B41" radius={[4, 4, 0, 0]} barSize={36} />
+                    <Bar dataKey="after"  name="After"  fill="#0CAF60" radius={[4, 4, 0, 0]} barSize={36} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            {/* Cluster Cards */}
-            <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)' }}>
-              Consolidated Clusters ({plan.clusters.length})
-            </h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '16px' }}>
+            {/* Clusters Grid */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '17px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                Consolidated Clusters
+                <span className="badge badge-ghost" style={{ marginLeft: '10px', fontWeight: 600 }}>
+                  {plan.clusters.length}
+                </span>
+              </h2>
+              <div style={{ display: 'flex', gap: '8px', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                <span className="badge badge-success">accepted</span>
+                <span className="badge badge-warning">pending</span>
+                <span className="badge badge-danger">rejected</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '14px' }}>
               {plan.clusters.map((cluster) => {
                 const status = clusterStatuses[cluster.id] || cluster.status;
                 const isExpanded = expandedCluster === cluster.id;
+                const utilColor = getUtilColor(cluster.utilizationPct);
+                const utilClass = cluster.utilizationPct >= 80 ? 'green' : cluster.utilizationPct >= 60 ? 'yellow' : 'red';
+
                 return (
                   <div
                     key={cluster.id}
                     className="card"
                     style={{
-                      borderColor: status === 'accepted' ? 'rgba(16, 185, 129, 0.3)' : status === 'rejected' ? 'rgba(239, 68, 68, 0.2)' : undefined,
+                      borderColor: status === 'accepted' ? 'rgba(12,175,96,0.35)'
+                                 : status === 'rejected' ? 'rgba(223,27,65,0.2)'
+                                 : undefined,
+                      position: 'relative', overflow: 'hidden',
                     }}
                   >
-                    <div className="card-body" style={{ padding: '18px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+                    {/* Top accent for utilization */}
+                    <div style={{
+                      position: 'absolute', top: 0, left: 0, right: 0, height: '3px',
+                      background: utilColor,
+                    }} />
+
+                    <div className="card-body" style={{ padding: '20px 20px 16px' }}>
+                      {/* Cluster Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                         <div>
                           <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
                             Cluster {cluster.id.split('-')[1]}
                           </div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                            <Truck size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                            {cluster.vehicleName}
+                          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Truck size={12} /> {cluster.vehicleName}
                           </div>
                         </div>
                         <span className={`badge ${status === 'accepted' ? 'badge-success' : status === 'rejected' ? 'badge-danger' : 'badge-warning'}`}>
@@ -292,62 +306,53 @@ export default function ConsolidationPage() {
                       <div style={{ marginBottom: '14px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '6px' }}>
                           <span style={{ color: 'var(--text-secondary)' }}>Utilization</span>
-                          <span style={{ fontWeight: 700, color: getUtilColor(cluster.utilizationPct) }}>{cluster.utilizationPct}%</span>
+                          <span style={{ fontWeight: 700, color: utilColor }}>{cluster.utilizationPct}%</span>
                         </div>
                         <div className="progress-bar">
-                          <div
-                            className={`progress-bar-fill ${cluster.utilizationPct >= 80 ? 'green' : cluster.utilizationPct >= 60 ? 'yellow' : 'red'}`}
-                            style={{ width: `${cluster.utilizationPct}%` }}
-                          />
+                          <div className={`progress-bar-fill ${utilClass}`} style={{ width: `${cluster.utilizationPct}%` }} />
                         </div>
                       </div>
 
                       {/* Metrics */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px', marginBottom: '14px' }}>
-                        <div>
-                          <span style={{ color: 'var(--text-tertiary)' }}>Shipments</span>
-                          <div style={{ fontWeight: 600 }}>{cluster.shipmentIds.length}</div>
-                        </div>
-                        <div>
-                          <span style={{ color: 'var(--text-tertiary)' }}>Weight</span>
-                          <div style={{ fontWeight: 600 }}>{cluster.totalWeight.toLocaleString()} kg</div>
-                        </div>
-                        <div>
-                          <span style={{ color: 'var(--text-tertiary)' }}>Distance</span>
-                          <div style={{ fontWeight: 600 }}>{cluster.routeDistanceKm} km</div>
-                        </div>
-                        <div>
-                          <span style={{ color: 'var(--text-tertiary)' }}>Cost</span>
-                          <div style={{ fontWeight: 600 }}>₹{cluster.estimatedCost.toLocaleString()}</div>
-                        </div>
+                        {[
+                          { label: 'Shipments', val: cluster.shipmentIds.length },
+                          { label: 'Weight', val: `${cluster.totalWeight.toLocaleString()} kg` },
+                          { label: 'Distance', val: `${cluster.routeDistanceKm} km` },
+                          { label: 'Cost', val: `₹${cluster.estimatedCost.toLocaleString()}` },
+                        ].map(m => (
+                          <div key={m.label}>
+                            <div style={{ color: 'var(--text-tertiary)', marginBottom: '2px' }}>{m.label}</div>
+                            <div style={{ fontWeight: 650, color: 'var(--text-primary)' }}>{m.val}</div>
+                          </div>
+                        ))}
                       </div>
 
-                      {/* Expandable Shipments */}
+                      {/* Expand/Collapse */}
                       <button
                         className="btn btn-ghost btn-sm"
                         style={{ width: '100%', justifyContent: 'center', marginBottom: '10px' }}
                         onClick={() => setExpandedCluster(isExpanded ? null : cluster.id)}
                       >
-                        <Package size={13} /> View Shipments
-                        {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                        <Package size={12} />
+                        View Shipments ({cluster.shipmentIds.length})
+                        {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       </button>
 
                       {isExpanded && (
                         <div style={{
-                          background: 'var(--bg-elevated)',
-                          borderRadius: 'var(--radius-md)',
-                          padding: '10px',
-                          marginBottom: '10px',
-                          fontSize: '12px',
+                          background: 'var(--bg-secondary)',
+                          borderRadius: '8px', padding: '8px', marginBottom: '10px',
+                          fontSize: '11.5px', border: '1px solid var(--border-secondary)',
                         }}>
-                          {cluster.shipmentIds.map((sid) => (
+                          {cluster.shipmentIds.map(sid => (
                             <div key={sid} style={{
-                              padding: '6px 8px',
-                              borderBottom: '1px solid var(--border-secondary)',
-                              display: 'flex',
-                              justifyContent: 'space-between',
+                              padding: '5px 8px', borderBottom: '1px solid var(--border-secondary)',
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                             }}>
-                              <span style={{ fontFamily: 'monospace', color: 'var(--text-accent)' }}>{sid.toUpperCase()}</span>
+                              <span style={{ fontFamily: 'monospace', color: 'var(--lorri-primary)', fontWeight: 600 }}>
+                                {sid.toUpperCase()}
+                              </span>
                               <span className="badge badge-ghost" style={{ fontSize: '10px' }}>pending</span>
                             </div>
                           ))}
@@ -358,14 +363,24 @@ export default function ConsolidationPage() {
                       {status === 'pending' && (
                         <div className="cluster-actions">
                           <button className="btn btn-sm btn-success" style={{ flex: 1 }} onClick={() => handleClusterAction(cluster.id, 'accepted')}>
-                            <Check size={13} /> Accept
+                            <Check size={12} /> Accept
                           </button>
                           <button className="btn btn-sm btn-secondary" style={{ flex: 1 }}>
-                            <Edit size={13} /> Modify
+                            <Edit size={12} /> Modify
                           </button>
                           <button className="btn btn-sm btn-danger" onClick={() => handleClusterAction(cluster.id, 'rejected')}>
-                            <X size={13} />
+                            <X size={12} />
                           </button>
+                        </div>
+                      )}
+
+                      {status !== 'pending' && (
+                        <div style={{
+                          textAlign: 'center', fontSize: '12px', fontWeight: 600,
+                          color: status === 'accepted' ? 'var(--lorri-success)' : 'var(--lorri-danger)',
+                          padding: '8px 0 0',
+                        }}>
+                          {status === 'accepted' ? '✓ Cluster accepted' : '✗ Cluster rejected'}
                         </div>
                       )}
                     </div>

@@ -4,38 +4,38 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Package, Layers, Map, Box, FlaskConical,
-  Leaf, MessageSquare, FileText, Settings, Truck, ChevronRight
+  Leaf, MessageSquare, FileText, Settings, Truck
 } from 'lucide-react';
 
 const navSections = [
   {
     label: 'Overview',
     items: [
-      { href: '/', icon: LayoutDashboard, label: 'Dashboard', badge: null },
+      { href: '/', icon: LayoutDashboard, label: 'Dashboard', badge: null, badgeAi: false },
     ],
   },
   {
     label: 'Operations',
     items: [
-      { href: '/shipments', icon: Package, label: 'Shipments', badge: '150' },
-      { href: '/consolidate', icon: Layers, label: 'Consolidation', badge: '7' },
-      { href: '/routes', icon: Map, label: 'Route Map', badge: null },
-      { href: '/packing', icon: Box, label: '3D Packing', badge: null },
+      { href: '/shipments',  icon: Package,      label: 'Shipments',    badge: '150', badgeAi: false },
+      { href: '/consolidate',icon: Layers,        label: 'Consolidation',badge: '7',   badgeAi: false },
+      { href: '/routes',     icon: Map,           label: 'Route Map',    badge: null,  badgeAi: false },
+      { href: '/packing',    icon: Box,           label: '3D Packing',   badge: null,  badgeAi: false },
     ],
   },
   {
     label: 'Intelligence',
     items: [
-      { href: '/simulate', icon: FlaskConical, label: 'Simulator', badge: null },
-      { href: '/carbon', icon: Leaf, label: 'Carbon Impact', badge: null },
-      { href: '/copilot', icon: MessageSquare, label: 'AI Co-Pilot', badge: 'AI' },
+      { href: '/simulate', icon: FlaskConical, label: 'Simulator',     badge: null, badgeAi: false },
+      { href: '/carbon',   icon: Leaf,         label: 'Carbon Impact', badge: null, badgeAi: false },
+      { href: '/copilot',  icon: MessageSquare,label: 'AI Co-Pilot',   badge: 'AI', badgeAi: true  },
     ],
   },
   {
     label: 'Management',
     items: [
-      { href: '/reports', icon: FileText, label: 'Reports', badge: null },
-      { href: '/settings', icon: Settings, label: 'Settings', badge: null },
+      { href: '/reports',  icon: FileText, label: 'Reports',  badge: null, badgeAi: false },
+      { href: '/settings', icon: Settings, label: 'Settings', badge: null, badgeAi: false },
     ],
   },
 ];
@@ -47,12 +47,14 @@ export default function Sidebar() {
     <aside className="sidebar">
       {/* Logo */}
       <div className="sidebar-logo">
-        <div className="sidebar-logo-icon">
-          <Truck size={22} color="white" />
-        </div>
-        <div>
-          <div className="sidebar-logo-text">LORRI</div>
-          <div className="sidebar-logo-sub">Load Optimization Engine</div>
+        <div className="sidebar-logo-inner">
+          <div className="sidebar-logo-icon">
+            <Truck size={18} color="white" />
+          </div>
+          <div>
+            <div className="sidebar-logo-text">LORRI</div>
+            <div className="sidebar-logo-sub">Load Optimization</div>
+          </div>
         </div>
       </div>
 
@@ -70,12 +72,13 @@ export default function Sidebar() {
                   href={item.href}
                   className={`sidebar-link ${isActive ? 'active' : ''}`}
                 >
-                  <Icon className="sidebar-link-icon" size={18} />
+                  <Icon className="icon" size={16} />
                   <span>{item.label}</span>
                   {item.badge && (
-                    <span className="sidebar-link-badge">{item.badge}</span>
+                    <span className={`sidebar-badge ${item.badgeAi ? 'ai-badge' : ''}`}>
+                      {item.badge}
+                    </span>
                   )}
-                  {isActive && <ChevronRight size={14} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
                 </Link>
               );
             })}
@@ -84,23 +87,12 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div style={{
-        padding: '16px 20px',
-        borderTop: '1px solid var(--border-secondary)',
-        fontSize: '11px',
-        color: 'var(--text-tertiary)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-          <div style={{
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            background: '#34d399',
-            boxShadow: '0 0 8px rgba(52, 211, 153, 0.5)',
-          }} />
-          <span>Engine Online</span>
+      <div className="sidebar-footer">
+        <div className="sidebar-status-dot" />
+        <div className="sidebar-footer-text">
+          <div style={{ color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>Engine Online</div>
+          <div>v1.0.0 · Team Escape Velocity</div>
         </div>
-        <div>v1.0.0 — Team Escape Velocity</div>
       </div>
     </aside>
   );

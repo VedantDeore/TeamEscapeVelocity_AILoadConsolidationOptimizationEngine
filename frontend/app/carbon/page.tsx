@@ -3,11 +3,11 @@
 import { useState, useEffect } from 'react';
 import {
   Leaf, TreePine, Car, Factory, Award, Download,
-  TrendingDown, Zap
+  TrendingDown, Zap, ArrowRight
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell,
+  ResponsiveContainer, BarChart, Bar,
 } from 'recharts';
 import { mockCarbonMonthly, mockCarbonBreakdown } from '@/lib/mock-data';
 
@@ -31,12 +31,13 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload) return null;
   return (
     <div style={{
-      background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)',
-      borderRadius: 'var(--radius-md)', padding: '12px 16px', fontSize: '12px',
+      background: '#ffffff', border: '1px solid #e3e8ee',
+      borderRadius: '8px', padding: '12px 16px', fontSize: '12px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
     }}>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>{label}</p>
+      <p style={{ color: '#8792a2', marginBottom: '6px' }}>{label}</p>
       {payload.map((entry: any, i: number) => (
-        <p key={i} style={{ color: entry.color || entry.stroke || entry.fill, fontWeight: 600 }}>
+        <p key={i} style={{ color: entry.color || entry.stroke || entry.fill, fontWeight: 700 }}>
           {entry.name}: {typeof entry.value === 'number' ? entry.value.toLocaleString() : entry.value} kg CO₂
         </p>
       ))}
@@ -53,172 +54,154 @@ export default function CarbonPage() {
     <>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Carbon Impact Dashboard</h1>
+          <h1 className="page-title">Carbon Impact</h1>
           <p className="page-subtitle">ESG-aligned sustainability metrics & environmental impact</p>
         </div>
         <button className="btn btn-primary">
-          <Download size={16} /> Download ESG Report
+          <Download size={15} /> Download ESG Report
         </button>
       </div>
 
       <div className="page-body">
-        {/* Hero Section: CO2 Saved + Equivalents */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr 1fr',
-          gap: '16px',
-          marginBottom: '24px',
-        }}>
-          {/* Main CO2 Counter */}
-          <div className="card" style={{
-            gridColumn: '1 / 3',
-            textAlign: 'center',
-            padding: '36px 24px',
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(6, 182, 212, 0.08) 100%)',
-            borderColor: 'rgba(16, 185, 129, 0.2)',
-          }}>
-            <Leaf size={32} style={{ color: '#10b981', margin: '0 auto 12px', display: 'block' }} />
+
+        {/* ── Dark Hero: CO₂ Total ── */}
+        <div className="hero-dark-section animate-slide-up" style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
             <div style={{
-              fontSize: '56px',
-              fontWeight: 800,
-              background: 'linear-gradient(135deg, #10b981, #06b6d4)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              lineHeight: 1,
+              width: '52px', height: '52px', borderRadius: '12px',
+              background: 'linear-gradient(135deg, #10B981, #06B6D4)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <AnimatedNumber value={totalSavings} />
+              <Leaf size={26} color="white" />
             </div>
-            <div style={{ fontSize: '16px', color: 'var(--text-secondary)', marginTop: '8px', fontWeight: 500 }}>
-              kg CO₂ Saved (6 Months)
+            <div>
+              <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>
+                Total CO₂ Saved — Last 6 Months
+              </div>
+              <div style={{
+                fontSize: '52px', fontWeight: 800, lineHeight: 1.05,
+                letterSpacing: '-0.04em',
+              }} className="text-gradient-green">
+                <AnimatedNumber value={totalSavings} /> kg
+              </div>
             </div>
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
               <span className="badge badge-success">▼ 33% reduction</span>
               <span className="badge badge-primary">Trend: Improving</span>
             </div>
           </div>
 
-          {/* Equivalent: Trees */}
-          <div className="card" style={{ textAlign: 'center', padding: '36px 16px' }}>
-            <TreePine size={28} style={{ color: '#10b981', margin: '0 auto 12px', display: 'block' }} />
-            <div style={{ fontSize: '36px', fontWeight: 800, color: '#10b981' }}>
-              <AnimatedNumber value={treesEquiv} />
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px' }}>
-              Trees Planted Equivalent
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-              1 tree absorbs ~22 kg CO₂/year
-            </div>
-          </div>
-
-          {/* Equivalent: Car Travel */}
-          <div className="card" style={{ textAlign: 'center', padding: '36px 16px' }}>
-            <Car size={28} style={{ color: '#06b6d4', margin: '0 auto 12px', display: 'block' }} />
-            <div style={{ fontSize: '36px', fontWeight: 800, color: '#06b6d4' }}>
-              <AnimatedNumber value={carKmEquiv} />
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px' }}>
-              km Car Travel Avoided
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-              Based on 160g CO₂/km avg car
-            </div>
+          <div className="hero-stats-row">
+            {[
+              { value: `${treesEquiv}`, label: 'Trees planted\nequivalent', cls: 'green' },
+              { value: `${carKmEquiv.toLocaleString()}`, label: 'km car travel\navoided', cls: 'purple' },
+              { value: '96', label: 'Trips\neliminated', cls: '' },
+              { value: 'A+', label: 'ESG green\nscore rating', cls: 'amber' },
+            ].map((s) => (
+              <div key={s.label} className="hero-stat">
+                <div className={`hero-stat-value ${s.cls}`}>{s.value}</div>
+                <div className="hero-stat-label" style={{ whiteSpace: 'pre-line' }}>{s.label}</div>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Green Score */}
-        <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 1fr', gap: '20px', marginBottom: '24px' }}>
-          <div className="card" style={{ textAlign: 'center', padding: '28px 16px' }}>
-            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--text-tertiary)', marginBottom: '16px' }}>
-              Green Score
+        {/* ── Equivalent Impact Cards ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px', marginBottom: '24px' }}>
+          <div className="feature-card-green animate-slide-up">
+            <TreePine size={26} style={{ marginBottom: '12px', opacity: 0.9 }} />
+            <div style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>
+              <AnimatedNumber value={treesEquiv} />
             </div>
-            <div className="green-score">
-              <div className="green-score-inner">
-                <div style={{ fontSize: '36px', fontWeight: 800, color: '#10b981' }}>A+</div>
-                <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>EXCELLENT</div>
-              </div>
-            </div>
-            <div style={{ marginTop: '14px' }}>
-              <Award size={16} style={{ color: '#fbbf24', display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Top 5% in industry</span>
-            </div>
+            <div className="feature-card-title" style={{ marginTop: '6px' }}>Trees Planted Equivalent</div>
+            <div className="feature-card-body">1 tree absorbs ~22 kg CO₂/year</div>
           </div>
 
-          {/* Monthly Trend */}
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Monthly CO₂ Trend</div>
-              <div className="card-description">Before vs After consolidation</div>
+          <div className="feature-card-purple animate-slide-up">
+            <Car size={26} style={{ marginBottom: '12px', opacity: 0.9 }} />
+            <div style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>
+              <AnimatedNumber value={carKmEquiv} />
             </div>
-            <div className="card-body" style={{ height: '260px' }}>
+            <div className="feature-card-title" style={{ marginTop: '6px' }}>km Car Travel Avoided</div>
+            <div className="feature-card-body">Based on 160g CO₂/km average car</div>
+          </div>
+
+          <div className="feature-card-amber animate-slide-up">
+            <Award size={26} style={{ marginBottom: '12px', opacity: 0.9 }} />
+            <div style={{ fontSize: '36px', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>A+</div>
+            <div className="feature-card-title" style={{ marginTop: '6px' }}>Green Score Rating</div>
+            <div className="feature-card-body">Top 5% in industry — Excellent</div>
+          </div>
+        </div>
+
+        {/* ── Charts Row ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', marginBottom: '24px' }}>
+          <div className="card animate-slide-up">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Monthly CO₂ Trend</div>
+                <div className="card-description">Before vs After consolidation</div>
+              </div>
+            </div>
+            <div className="card-body" style={{ height: '280px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={mockCarbonMonthly}>
                   <defs>
                     <linearGradient id="carbonBefore" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#ef4444" stopOpacity={0.2} />
-                      <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
+                      <stop offset="0%" stopColor="#DF1B41" stopOpacity={0.15} />
+                      <stop offset="100%" stopColor="#DF1B41" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="carbonAfter" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10b981" stopOpacity={0.2} />
-                      <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                      <stop offset="0%" stopColor="#0CAF60" stopOpacity={0.15} />
+                      <stop offset="100%" stopColor="#0CAF60" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-secondary)" />
-                  <XAxis dataKey="month" tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }} axisLine={false} tickLine={false} unit=" kg" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f7" />
+                  <XAxis dataKey="month" tick={{ fill: '#8792a2', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#8792a2', fontSize: 11 }} axisLine={false} tickLine={false} unit=" kg" />
                   <Tooltip content={<CustomTooltip />} />
-                  <Area type="monotone" dataKey="co2Before" name="Before" stroke="#ef4444" strokeWidth={2} fill="url(#carbonBefore)" dot={{ fill: '#ef4444', r: 3 }} />
-                  <Area type="monotone" dataKey="co2After" name="After" stroke="#10b981" strokeWidth={2} fill="url(#carbonAfter)" dot={{ fill: '#10b981', r: 3 }} />
+                  <Area type="monotone" dataKey="co2Before" name="Before" stroke="#DF1B41" strokeWidth={2.5} fill="url(#carbonBefore)" dot={{ fill: '#DF1B41', r: 3, strokeWidth: 0 }} />
+                  <Area type="monotone" dataKey="co2After"  name="After"  stroke="#0CAF60" strokeWidth={2.5} fill="url(#carbonAfter)"  dot={{ fill: '#0CAF60', r: 3, strokeWidth: 0 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Breakdown */}
-          <div className="card">
+          <div className="card animate-slide-up">
             <div className="card-header">
-              <div className="card-title">Emission Breakdown</div>
-              <div className="card-description">By vehicle type</div>
+              <div className="card-title">By Vehicle Type</div>
+              <div className="card-description">Emission breakdown</div>
             </div>
-            <div className="card-body" style={{ height: '260px' }}>
+            <div className="card-body" style={{ height: '280px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={mockCarbonBreakdown} layout="vertical" barGap={4}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-secondary)" />
-                  <XAxis type="number" tick={{ fill: 'var(--text-tertiary)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis dataKey="category" type="category" tick={{ fill: 'var(--text-tertiary)', fontSize: 10 }} axisLine={false} tickLine={false} width={90} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f7" />
+                  <XAxis type="number" tick={{ fill: '#8792a2', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis dataKey="category" type="category" tick={{ fill: '#8792a2', fontSize: 10 }} axisLine={false} tickLine={false} width={90} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="before" name="Before" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={12} />
-                  <Bar dataKey="after" name="After" fill="#10b981" radius={[0, 4, 4, 0]} barSize={12} />
+                  <Bar dataKey="before" name="Before" fill="#DF1B41" radius={[0, 4, 4, 0]} barSize={10} />
+                  <Bar dataKey="after"  name="After"  fill="#0CAF60" radius={[0, 4, 4, 0]} barSize={10} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
         </div>
 
-        {/* Impact Metrics */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Environmental Impact Summary</div>
-          </div>
-          <div className="card-body">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '16px', textAlign: 'center' }}>
-              {[
-                { label: 'Total Emissions Cut', value: `${totalSavings.toLocaleString()} kg`, color: '#10b981', icon: '🌍' },
-                { label: 'Clean Air Days', value: '18', color: '#06b6d4', icon: '💨' },
-                { label: 'Energy Saved', value: '2,400 kWh', color: '#8b5cf6', icon: '⚡' },
-                { label: 'Fuel Saved', value: '1,850 L', color: '#f59e0b', icon: '⛽' },
-                { label: 'Trips Eliminated', value: '96', color: '#0ea5e9', icon: '🚛' },
-                { label: 'Green Score', value: 'A+', color: '#10b981', icon: '🏆' },
-              ].map((m) => (
-                <div key={m.label}>
-                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>{m.icon}</div>
-                  <div style={{ fontSize: '22px', fontWeight: 800, color: m.color }}>{m.value}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>{m.label}</div>
-                </div>
-              ))}
+        {/* ── Impact Metrics ── */}
+        <div className="stat-highlight-bar stagger-children">
+          {[
+            { value: `${totalSavings.toLocaleString()} kg`, label: 'Total emissions cut',     cls: 'green' },
+            { value: '18',                                  label: 'Clean air days',           cls: '' },
+            { value: '2,400 kWh',                          label: 'Energy saved',             cls: 'purple' },
+            { value: '1,850 L',                            label: 'Fuel saved',               cls: 'amber' },
+          ].map((s) => (
+            <div key={s.label} className="stat-highlight-item">
+              <div className={`stat-highlight-value ${s.cls}`}>{s.value}</div>
+              <div className="stat-highlight-label">{s.label}</div>
             </div>
-          </div>
+          ))}
         </div>
+
       </div>
     </>
   );
