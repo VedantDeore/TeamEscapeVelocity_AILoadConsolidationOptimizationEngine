@@ -1,0 +1,1 @@
+shipment_id,origin_city,origin_lat,origin_lng,dest_city,dest_lat,dest_lng,weight_kg,volume_m3,length_cm,width_cm,height_cm,delivery_start,delivery_end,priority,cargo_type
