@@ -46,6 +46,8 @@ The AI agent uses **LLM reasoning + logistics data** to generate insights.
 Lorri estimates emissions based on **distance × load factor**, helping logistics companies measure sustainability improvements.
 
 ---
+# 🏗 System Architecture
+
 Frontend (Next.js)
 │
 ├── Dashboard UI
@@ -67,4 +69,120 @@ Database (Supabase)
 ▼
 AI Co-Pilot (LLM)
 
-# 🏗 System Architecture
+
+---
+
+# ⚙️ Tech Stack
+
+## Frontend
+
+| Technology | Purpose |
+|---|---|
+| Next.js 14 | Frontend framework |
+| Tailwind CSS + shadcn/ui | Modern UI components |
+| Recharts | Analytics and charts |
+| Leaflet + React-Leaflet | Interactive maps |
+| Three.js / React-Three-Fiber | 3D truck loading visualization |
+| Framer Motion | UI animations |
+| Supabase JS Client | Authentication and realtime data |
+
+---
+
+## Backend
+
+| Technology | Purpose |
+|---|---|
+| Flask | REST API server |
+| Flask-CORS | Cross-origin API support |
+| Google OR-Tools | Vehicle routing + bin packing optimization |
+| scikit-learn | Shipment clustering |
+| pandas + numpy | Data processing |
+| scipy.optimize | Mathematical optimization |
+| geopy | Distance calculation |
+| openrouteservice | Route optimization API |
+| py3dbp | 3D bin packing algorithm |
+
+---
+
+## AI / Machine Learning
+
+| Component | Tool |
+|---|---|
+| Shipment Clustering | DBSCAN (scikit-learn) |
+| Capacity Optimization | Google OR-Tools |
+| Route Optimization | OR-Tools VRP |
+| Natural Language Agent | Mixtral-8x7B / Groq |
+| Carbon Estimation | Custom emission formula |
+| Pattern Learning | Feedback-based optimization |
+
+---
+
+# 🧠 How Lorri Works
+
+### 1️⃣ Shipment Data Ingestion
+Shipment data is uploaded with:
+
+- pickup location
+- delivery location
+- weight
+- dimensions
+- delivery deadline
+
+---
+
+### 2️⃣ Clustering
+Lorri uses **DBSCAN clustering** to group shipments that are geographically close.
+
+This automatically identifies **consolidation opportunities**.
+
+---
+
+### 3️⃣ Capacity Optimization
+A **bin packing algorithm** determines how shipments fit into vehicles.
+
+Goal:
+
+- maximize utilization
+- minimize empty space
+
+---
+
+### 4️⃣ Route Optimization
+Lorri solves the **Vehicle Routing Problem (VRP)** to generate optimal routes.
+
+This minimizes:
+
+- distance
+- delivery time
+- fuel cost
+
+---
+
+### 5️⃣ 3D Load Simulation
+Shipments are visualized inside trucks using **3D bin packing visualization**.
+
+This helps planners validate the loading plan.
+
+---
+
+### 6️⃣ AI Logistics Copilot
+
+Example interaction:
+
+---
+
+# 📊 Expected Impact
+
+| Metric | Improvement |
+|---|---|
+| Vehicle Utilization | +30–40% |
+| Logistics Cost | −20–30% |
+| Empty Miles | −35% |
+| Carbon Emissions | −25% |
+
+---
+
+# 🚀 Installation
+
+## Clone Repository
+
