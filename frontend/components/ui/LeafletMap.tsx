@@ -484,17 +484,30 @@ export default function LeafletMap({
           border-top-color: rgba(255, 255, 255, 0.97) !important;
         }
 
-        /* ── Zoom controls ── */
-        .leaflet-control-zoom a {
+        /* ── Zoom controls (dark) ── */
+        .lorri-map-dark .leaflet-control-zoom a {
           background: rgba(15, 23, 42, 0.85) !important;
           color: #94a3b8 !important;
           border-color: rgba(148, 163, 184, 0.12) !important;
           backdrop-filter: blur(8px);
           transition: all 0.15s ease;
         }
-        .leaflet-control-zoom a:hover {
+        .lorri-map-dark .leaflet-control-zoom a:hover {
           background: rgba(30, 41, 59, 0.95) !important;
           color: #f8fafc !important;
+        }
+        /* ── Zoom controls (light) ── */
+        .lorri-map-light .leaflet-control-zoom a {
+          background: rgba(255, 255, 255, 0.92) !important;
+          color: #475569 !important;
+          border-color: rgba(0, 0, 0, 0.1) !important;
+          backdrop-filter: blur(8px);
+          transition: all 0.15s ease;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08) !important;
+        }
+        .lorri-map-light .leaflet-control-zoom a:hover {
+          background: rgba(255, 255, 255, 1) !important;
+          color: #1e293b !important;
         }
 
         /* ── Animated flowing dashes ── */
@@ -527,6 +540,7 @@ export default function LeafletMap({
       `}</style>
       <div
         ref={mapContainerRef}
+        className={mapTheme === "dark" ? "lorri-map-dark" : "lorri-map-light"}
         style={{
           width: "100%",
           height: "100%",

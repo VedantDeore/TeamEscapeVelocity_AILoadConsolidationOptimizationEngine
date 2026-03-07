@@ -201,6 +201,18 @@ export async function sendChatMessage(message: string, sessionId = "default") {
   });
 }
 
+export async function saveChatMessage(
+  role: string,
+  content: string,
+  sessionId = "default",
+  actions?: any[],
+) {
+  return fetchApi<any>("/api/copilot/save-message", {
+    method: "POST",
+    body: JSON.stringify({ role, content, session_id: sessionId, actions }),
+  });
+}
+
 export async function getChatHistory(sessionId = "default") {
   return fetchApi<any[]>(`/api/copilot/history?session_id=${sessionId}`);
 }
