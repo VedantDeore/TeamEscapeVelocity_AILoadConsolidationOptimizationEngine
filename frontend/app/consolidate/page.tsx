@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   Layers,
   Zap,
@@ -16,6 +17,10 @@ import {
   Package,
   TrendingUp,
   TrendingDown,
+  AlertTriangle,
+  MapPin,
+  Box,
+  Navigation,
 } from "lucide-react";
 import {
   BarChart,
@@ -32,6 +37,7 @@ import {
   runConsolidation,
   submitClusterFeedback,
   getVehicles,
+  checkReadiness,
 } from "@/lib/api";
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -89,12 +95,31 @@ export default function ConsolidationPage() {
   const [vehiclesMap, setVehiclesMap] = useState<
     Record<string, { max_weight_kg: number; name: string }>
   >({});
+  const [readiness, setReadiness] = useState<{
+    ready: boolean;
+    issues: { type: string; field: string; message: string }[];
+    warnings: { type: string; field: string; message: string }[];
+    summary: { pending_shipments: number; vehicles: number; depots: number };
+  } | null>(null);
+  const [runStage, setRunStage] = useState(0);
+  const [runError, setRunError] = useState<string | null>(null);
+
+  const RUN_STAGES = [
+    { label: "Fetching pending shipments from database...", pct: 10 },
+    { label: "Analyzing pickup & delivery locations...", pct: 25 },
+    { label: "Running DBSCAN geo-temporal clustering...", pct: 45 },
+    { label: "Optimizing 3D bin-packing assignments...", pct: 65 },
+    { label: "Solving CVRPTW route optimization...", pct: 80 },
+    { label: "Calculating carbon emissions & costs...", pct: 90 },
+    { label: "Saving consolidation plan to database...", pct: 95 },
+  ];
 
   const fetchVehiclesMap = () => {
     getVehicles()
       .then((data) => {
         if (data?.length) {
-          const map: Record<string, { max_weight_kg: number; name: string }> = {};
+          const map: Record<string, { max_weight_kg: number; name: string }> =
+            {};
           data.forEach((v: any) => {
             map[v.id] = { max_weight_kg: v.max_weight_kg ?? 0, name: v.name };
           });
@@ -126,7 +151,10 @@ export default function ConsolidationPage() {
               id: c.id,
               planId: c.plan_id,
               vehicleId: c.vehicle_id,
-              vehicleName: c.vehicle_name || vehiclesMap[c.vehicle_id]?.name || "Unknown Truck",
+              vehicleName:
+                c.vehicle_name ||
+                vehiclesMap[c.vehicle_id]?.name ||
+                "Unknown Truck",
               shipmentIds: c.shipment_ids || [],
               utilizationPct: c.utilization_pct || 0,
               totalWeight: c.total_weight || 0,
@@ -155,13 +183,28 @@ export default function ConsolidationPage() {
   useEffect(() => {
     fetchVehiclesMap();
     loadLatestPlan();
+    checkReadiness()
+      .then((data) => setReadiness(data))
+      .catch(() => {});
   }, []);
 
   const handleRunConsolidation = () => {
     setIsRunning(true);
     setShowResults(false);
+    setRunError(null);
+    setRunStage(0);
+
+    // Animate through stages
+    const stageInterval = setInterval(() => {
+      setRunStage((prev) => {
+        if (prev < RUN_STAGES.length - 1) return prev + 1;
+        return prev;
+      });
+    }, 1800);
+
     runConsolidation()
       .then((data) => {
+        clearInterval(stageInterval);
         if (data && data.clusters && data.clusters.length > 0) {
           const mapped: ConsolidationPlan = {
             id: data.id || data.plan_id || "",
@@ -181,7 +224,10 @@ export default function ConsolidationPage() {
               id: c.id,
               planId: c.plan_id || data.plan_id || "",
               vehicleId: c.vehicle_id,
-              vehicleName: c.vehicle_name || vehiclesMap[c.vehicle_id]?.name || "Unknown Truck",
+              vehicleName:
+                c.vehicle_name ||
+                vehiclesMap[c.vehicle_id]?.name ||
+                "Unknown Truck",
               shipmentIds: c.shipment_ids || [],
               utilizationPct: c.utilization_pct || 0,
               totalWeight: c.total_weight || 0,
@@ -194,17 +240,26 @@ export default function ConsolidationPage() {
           };
           setPlan(mapped);
           setShowResults(true);
-          // Refresh vehicles map in case new vehicles were added
           fetchVehiclesMap();
+          checkReadiness()
+            .then((d) => setReadiness(d))
+            .catch(() => {});
         } else {
           setPlan(emptyPlan);
           setShowResults(false);
+          setRunError(
+            "No clusters could be formed. Try adding more shipments with nearby routes.",
+          );
         }
       })
       .catch((err) => {
+        clearInterval(stageInterval);
         console.error("Failed to run consolidation:", err);
         setPlan(emptyPlan);
         setShowResults(false);
+        setRunError(
+          "Consolidation engine failed. Check that you have pending shipments, vehicles, and depots configured.",
+        );
       })
       .finally(() => {
         setIsRunning(false);
@@ -213,7 +268,25 @@ export default function ConsolidationPage() {
 
   const handleClusterAction = (clusterId: string, action: string) => {
     setClusterStatuses((prev) => ({ ...prev, [clusterId]: action }));
-    submitClusterFeedback(clusterId, action).catch(() => {});
+    submitClusterFeedback(clusterId, action)
+      .then(() => {
+        // Refresh readiness when rejecting (shipments go back to pending)
+        if (action === "rejected") {
+          checkReadiness()
+            .then((d) => setReadiness(d))
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+  };
+
+  const hasRejectedClusters = plan.clusters.some(
+    (c) => (clusterStatuses[c.id] || c.status) === "rejected",
+  );
+
+  const handleRerunRejected = () => {
+    // Re-run consolidation — rejected shipments are already back to pending
+    handleRunConsolidation();
   };
 
   const getUtilColor = (pct: number) => {
@@ -221,6 +294,25 @@ export default function ConsolidationPage() {
     if (pct >= 60) return "#E5850B";
     return "#DF1B41";
   };
+
+  const costSavingPct =
+    plan.totalCostBefore > 0
+      ? Math.round(
+          ((plan.totalCostBefore - plan.totalCostAfter) /
+            plan.totalCostBefore) *
+            100,
+        )
+      : 0;
+  const tripSavingPct =
+    plan.tripsBefore > 0
+      ? Math.round(
+          ((plan.tripsBefore - plan.tripsAfter) / plan.tripsBefore) * 100,
+        )
+      : 0;
+  const co2SavingPct =
+    plan.co2Before > 0
+      ? Math.round(((plan.co2Before - plan.co2After) / plan.co2Before) * 100)
+      : 0;
 
   const beforeAfterData = [
     { metric: "Trips", before: plan.tripsBefore, after: plan.tripsAfter },
@@ -345,52 +437,463 @@ export default function ConsolidationPage() {
           </div>
         </div>
 
-        {/* ── Loading State ── */}
-        {isRunning && (
-          <div style={{ textAlign: "center", padding: "80px 24px" }}>
+        {/* ── Readiness Warnings ── */}
+        {readiness && !showResults && !isRunning && (
+          <div style={{ marginBottom: "24px" }}>
+            {/* Issues (blocking) */}
+            {readiness.issues.length > 0 && (
+              <div
+                className="animate-fade-in"
+                style={{
+                  background: "rgba(223,27,65,0.06)",
+                  border: "1px solid rgba(223,27,65,0.20)",
+                  borderRadius: "var(--radius-lg)",
+                  padding: "16px 20px",
+                  marginBottom: "12px",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "12px",
+                }}
+              >
+                <AlertTriangle
+                  size={18}
+                  style={{ color: "#DF1B41", flexShrink: 0, marginTop: 2 }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      color: "#DF1B41",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    Missing Configuration — Cannot run consolidation
+                  </div>
+                  {readiness.issues.map((issue, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--text-secondary)",
+                        marginBottom: "3px",
+                      }}
+                    >
+                      • {issue.message}
+                    </div>
+                  ))}
+                  <Link
+                    href="/settings"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "var(--lorri-primary)",
+                      marginTop: "8px",
+                      textDecoration: "none",
+                    }}
+                  >
+                    <Settings2 size={12} /> Go to Settings to configure{" "}
+                    <ArrowRight size={12} />
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* Warnings (non-blocking) */}
+            {readiness.warnings.length > 0 && (
+              <div
+                className="animate-fade-in"
+                style={{
+                  background: "rgba(245,158,11,0.06)",
+                  border: "1px solid rgba(245,158,11,0.20)",
+                  borderRadius: "var(--radius-lg)",
+                  padding: "16px 20px",
+                  marginBottom: "12px",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "12px",
+                }}
+              >
+                <AlertTriangle
+                  size={18}
+                  style={{ color: "#D97706", flexShrink: 0, marginTop: 2 }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      color: "#D97706",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    Suggestions
+                  </div>
+                  {readiness.warnings.map((w, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--text-secondary)",
+                        marginBottom: "3px",
+                      }}
+                    >
+                      • {w.message}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Summary cards */}
+            {readiness.summary && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, 1fr)",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  className="card"
+                  style={{
+                    padding: "16px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "8px",
+                      background:
+                        readiness.summary.pending_shipments > 0
+                          ? "rgba(99,91,255,0.10)"
+                          : "rgba(223,27,65,0.08)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Package
+                      size={18}
+                      style={{
+                        color:
+                          readiness.summary.pending_shipments > 0
+                            ? "#635BFF"
+                            : "#DF1B41",
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "18px",
+                        fontWeight: 700,
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {readiness.summary.pending_shipments}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "var(--text-tertiary)",
+                      }}
+                    >
+                      Pending Shipments
+                    </div>
+                  </div>
+                </div>
+                <div
+                  className="card"
+                  style={{
+                    padding: "16px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "8px",
+                      background:
+                        readiness.summary.vehicles > 0
+                          ? "rgba(16,185,129,0.10)"
+                          : "rgba(223,27,65,0.08)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Truck
+                      size={18}
+                      style={{
+                        color:
+                          readiness.summary.vehicles > 0
+                            ? "#10B981"
+                            : "#DF1B41",
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "18px",
+                        fontWeight: 700,
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {readiness.summary.vehicles}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "var(--text-tertiary)",
+                      }}
+                    >
+                      Vehicles Available
+                    </div>
+                  </div>
+                </div>
+                <div
+                  className="card"
+                  style={{
+                    padding: "16px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "8px",
+                      background:
+                        readiness.summary.depots > 0
+                          ? "rgba(14,165,233,0.10)"
+                          : "rgba(223,27,65,0.08)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <MapPin
+                      size={18}
+                      style={{
+                        color:
+                          readiness.summary.depots > 0 ? "#0ea5e9" : "#DF1B41",
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "18px",
+                        fontWeight: 700,
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {readiness.summary.depots}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "var(--text-tertiary)",
+                      }}
+                    >
+                      Depot Locations
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Error State ── */}
+        {runError && !isRunning && (
+          <div
+            className="animate-fade-in"
+            style={{
+              background: "rgba(223,27,65,0.06)",
+              border: "1px solid rgba(223,27,65,0.20)",
+              borderRadius: "var(--radius-lg)",
+              padding: "24px",
+              marginBottom: "24px",
+              textAlign: "center",
+            }}
+          >
+            <AlertTriangle
+              size={28}
+              style={{ color: "#DF1B41", marginBottom: "12px" }}
+            />
             <div
               style={{
-                width: "72px",
-                height: "72px",
+                fontWeight: 700,
+                fontSize: "15px",
+                color: "#DF1B41",
+                marginBottom: "8px",
+              }}
+            >
+              Consolidation Failed
+            </div>
+            <div
+              style={{
+                fontSize: "13px",
+                color: "var(--text-secondary)",
+                marginBottom: "16px",
+              }}
+            >
+              {runError}
+            </div>
+            <div
+              style={{ display: "flex", gap: "12px", justifyContent: "center" }}
+            >
+              <Link
+                href="/shipments"
+                className="btn btn-secondary btn-sm"
+                style={{ textDecoration: "none" }}
+              >
+                <Package size={14} /> Add Shipments
+              </Link>
+              <Link
+                href="/settings"
+                className="btn btn-secondary btn-sm"
+                style={{ textDecoration: "none" }}
+              >
+                <Settings2 size={14} /> Configure Settings
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* ── Loading State ── */}
+        {isRunning && (
+          <div style={{ textAlign: "center", padding: "60px 24px" }}>
+            <div
+              style={{
+                width: "80px",
+                height: "80px",
                 margin: "0 auto 24px",
-                background: "var(--lorri-primary-light)",
+                background:
+                  "linear-gradient(135deg, rgba(99,91,255,0.15), rgba(139,92,246,0.10))",
                 borderRadius: "50%",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                animation: "pulse 2s infinite",
               }}
             >
-              <Zap size={32} style={{ color: "var(--lorri-primary)" }} />
+              <Zap size={36} style={{ color: "var(--lorri-primary)" }} />
             </div>
             <p
               style={{
-                fontSize: "18px",
+                fontSize: "20px",
                 fontWeight: 700,
                 color: "var(--text-primary)",
                 marginBottom: "8px",
               }}
             >
-              Running DBSCAN Clustering + 3D Bin Packing
+              Running AI Consolidation Engine
             </p>
             <p
               style={{
                 fontSize: "13px",
                 color: "var(--text-secondary)",
-                marginBottom: "28px",
+                marginBottom: "32px",
               }}
             >
-              Analyzing 150 shipments across 15 cities · Optimizing vehicle
-              assignments
+              {readiness?.summary
+                ? `Processing ${readiness.summary.pending_shipments} shipments with ${readiness.summary.vehicles} vehicles`
+                : "Analyzing shipments and optimizing assignments"}
             </p>
+
+            {/* Stage indicators */}
+            <div
+              style={{ maxWidth: "500px", margin: "0 auto", textAlign: "left" }}
+            >
+              {RUN_STAGES.map((stage, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    padding: "8px 0",
+                    opacity: idx <= runStage ? 1 : 0.3,
+                    transition: "opacity 0.5s ease",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "22px",
+                      height: "22px",
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background:
+                        idx < runStage
+                          ? "rgba(12,175,96,0.15)"
+                          : idx === runStage
+                            ? "rgba(99,91,255,0.15)"
+                            : "var(--bg-secondary)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {idx < runStage ? (
+                      <Check size={12} style={{ color: "#0CAF60" }} />
+                    ) : idx === runStage ? (
+                      <div
+                        className="loading-spinner"
+                        style={{ width: 12, height: 12 }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: "var(--text-tertiary)",
+                        }}
+                      />
+                    )}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: idx === runStage ? 600 : 400,
+                      color:
+                        idx <= runStage
+                          ? "var(--text-primary)"
+                          : "var(--text-tertiary)",
+                    }}
+                  >
+                    {stage.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
             <div
               className="progress-bar"
-              style={{ maxWidth: "400px", margin: "0 auto" }}
+              style={{ maxWidth: "500px", margin: "24px auto 0" }}
             >
               <div
                 className="progress-bar-fill purple"
                 style={{
-                  width: "65%",
+                  width: `${RUN_STAGES[runStage]?.pct || 10}%`,
                   background: "linear-gradient(90deg, #635BFF, #8B5CF6)",
+                  transition: "width 1s ease",
                 }}
               />
             </div>
@@ -436,8 +939,19 @@ export default function ConsolidationPage() {
                   >
                     {[
                       { val: plan.tripsBefore, label: "Total Trips" },
-                      { val: "58%", label: "Utilization" },
-                      { val: "₹4.5L", label: "Total Cost" },
+                      {
+                        val:
+                          `${Math.round((((plan.totalCostBefore / plan.tripsBefore) * 100) / (plan.totalCostBefore || 1)) * (plan.tripsBefore || 1))}%` ||
+                          "—",
+                        label: "Utilization",
+                      },
+                      {
+                        val:
+                          plan.totalCostBefore > 0
+                            ? `₹${(plan.totalCostBefore / 1000).toFixed(1)}K`
+                            : "—",
+                        label: "Total Cost",
+                      },
                       { val: `${plan.co2Before} kg`, label: "CO₂" },
                     ].map((m) => (
                       <div key={m.label}>
@@ -491,10 +1005,29 @@ export default function ConsolidationPage() {
                   }}
                 >
                   {[
-                    { label: "Trips", pct: "▼ 34%", cls: "green" },
-                    { label: "Cost", pct: "▼ 31%", cls: "green" },
-                    { label: "CO₂", pct: "▼ 33%", cls: "green" },
-                    { label: "Utilization", pct: "▲ 29%", cls: "purple" },
+                    {
+                      label: "Trips",
+                      pct: tripSavingPct > 0 ? `▼ ${tripSavingPct}%` : "—",
+                      cls: "green",
+                    },
+                    {
+                      label: "Cost",
+                      pct: costSavingPct > 0 ? `▼ ${costSavingPct}%` : "—",
+                      cls: "green",
+                    },
+                    {
+                      label: "CO₂",
+                      pct: co2SavingPct > 0 ? `▼ ${co2SavingPct}%` : "—",
+                      cls: "green",
+                    },
+                    {
+                      label: "Utilization",
+                      pct:
+                        plan.avgUtilization > 0
+                          ? `▲ ${Math.round(plan.avgUtilization)}%`
+                          : "—",
+                      cls: "purple",
+                    },
                   ].map((s) => (
                     <div
                       key={s.label}
@@ -550,11 +1083,29 @@ export default function ConsolidationPage() {
                       {
                         val: plan.tripsAfter,
                         label: "Total Trips",
-                        pct: "▼34%",
+                        pct: tripSavingPct > 0 ? `▼${tripSavingPct}%` : "",
                       },
-                      { val: "87%", label: "Utilization", pct: "▲29%" },
-                      { val: "₹3.1L", label: "Total Cost", pct: "▼31%" },
-                      { val: `${plan.co2After} kg`, label: "CO₂", pct: "▼33%" },
+                      {
+                        val: `${Math.round(plan.avgUtilization)}%`,
+                        label: "Utilization",
+                        pct:
+                          plan.avgUtilization > 0
+                            ? `▲${Math.round(plan.avgUtilization)}%`
+                            : "",
+                      },
+                      {
+                        val:
+                          plan.totalCostAfter > 0
+                            ? `₹${(plan.totalCostAfter / 1000).toFixed(1)}K`
+                            : "—",
+                        label: "Total Cost",
+                        pct: costSavingPct > 0 ? `▼${costSavingPct}%` : "",
+                      },
+                      {
+                        val: `${plan.co2After} kg`,
+                        label: "CO₂",
+                        pct: co2SavingPct > 0 ? `▼${co2SavingPct}%` : "",
+                      },
                     ].map((m) => (
                       <div key={m.label}>
                         <div
@@ -678,12 +1229,28 @@ export default function ConsolidationPage() {
             </div>
 
             {!showResults || plan.clusters.length === 0 ? (
-              <div className="card" style={{ textAlign: "center", padding: "60px 20px" }}>
+              <div
+                className="card"
+                style={{ textAlign: "center", padding: "60px 20px" }}
+              >
                 <div style={{ fontSize: "48px", marginBottom: "16px" }}>📦</div>
-                <h3 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "8px", color: "var(--text-primary)" }}>
+                <h3
+                  style={{
+                    fontSize: "18px",
+                    fontWeight: 700,
+                    marginBottom: "8px",
+                    color: "var(--text-primary)",
+                  }}
+                >
                   No Consolidation Plan Found
                 </h3>
-                <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "24px" }}>
+                <p
+                  style={{
+                    fontSize: "14px",
+                    color: "var(--text-secondary)",
+                    marginBottom: "24px",
+                  }}
+                >
                   {isRunning
                     ? "Processing shipments and creating consolidation plan..."
                     : "Run consolidation to create clusters from your pending shipments."}
@@ -708,279 +1275,451 @@ export default function ConsolidationPage() {
                 }}
               >
                 {plan.clusters.map((cluster) => {
-                const status = clusterStatuses[cluster.id] || cluster.status;
-                const isExpanded = expandedCluster === cluster.id;
-                const utilColor = getUtilColor(cluster.utilizationPct);
-                const utilClass =
-                  cluster.utilizationPct >= 80
-                    ? "green"
-                    : cluster.utilizationPct >= 60
-                      ? "yellow"
-                      : "red";
+                  const status = clusterStatuses[cluster.id] || cluster.status;
+                  const isExpanded = expandedCluster === cluster.id;
+                  const utilColor = getUtilColor(cluster.utilizationPct);
+                  const utilClass =
+                    cluster.utilizationPct >= 80
+                      ? "green"
+                      : cluster.utilizationPct >= 60
+                        ? "yellow"
+                        : "red";
 
-                return (
-                  <div
-                    key={cluster.id}
-                    className="card"
-                    style={{
-                      borderColor:
-                        status === "accepted"
-                          ? "rgba(12,175,96,0.35)"
-                          : status === "rejected"
-                            ? "rgba(223,27,65,0.2)"
-                            : undefined,
-                      position: "relative",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {/* Top accent for utilization */}
+                  return (
                     <div
+                      key={cluster.id}
+                      className="card"
                       style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: "3px",
-                        background: utilColor,
+                        borderColor:
+                          status === "accepted"
+                            ? "rgba(12,175,96,0.35)"
+                            : status === "rejected"
+                              ? "rgba(223,27,65,0.2)"
+                              : undefined,
+                        position: "relative",
+                        overflow: "hidden",
                       }}
-                    />
-
-                    <div
-                      className="card-body"
-                      style={{ padding: "20px 20px 16px" }}
                     >
-                      {/* Cluster Header */}
+                      {/* Top accent for utilization */}
                       <div
                         style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                          marginBottom: "16px",
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: "3px",
+                          background: utilColor,
                         }}
-                      >
-                        <div>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              fontWeight: 700,
-                              color: "var(--text-primary)",
-                            }}
-                          >
-                            Cluster {cluster.id.split("-")[1]}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "13px",
-                              fontWeight: 600,
-                              color: "var(--lorri-primary)",
-                              marginTop: "4px",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "6px",
-                            }}
-                          >
-                            <Truck size={14} style={{ color: "var(--lorri-primary)" }} />
-                            <span>{cluster.vehicleName || vehiclesMap[cluster.vehicleId]?.name || "Unknown Truck"}</span>
-                          </div>
-                        </div>
-                        <span
-                          className={`badge ${status === "accepted" ? "badge-success" : status === "rejected" ? "badge-danger" : "badge-warning"}`}
-                        >
-                          {status}
-                        </span>
-                      </div>
+                      />
 
-                      {/* Utilization Bar */}
-                      <div style={{ marginBottom: "14px" }}>
+                      <div
+                        className="card-body"
+                        style={{ padding: "20px 20px 16px" }}
+                      >
+                        {/* Cluster Header */}
                         <div
                           style={{
                             display: "flex",
                             justifyContent: "space-between",
-                            fontSize: "11px",
-                            marginBottom: "6px",
+                            alignItems: "flex-start",
+                            marginBottom: "16px",
                           }}
                         >
-                          <span style={{ color: "var(--text-secondary)" }}>
-                            Utilization
-                          </span>
-                          <span style={{ fontWeight: 700, color: utilColor }}>
-                            {cluster.utilizationPct}%
-                          </span>
-                        </div>
-                        <div className="progress-bar">
-                          <div
-                            className={`progress-bar-fill ${utilClass}`}
-                            style={{ width: `${cluster.utilizationPct}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Metrics */}
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: "10px",
-                          fontSize: "12px",
-                          marginBottom: "14px",
-                        }}
-                      >
-                        {[
-                          {
-                            label: "Shipments",
-                            val: cluster.shipmentIds.length,
-                          },
-                          {
-                            label: "Weight",
-                            val: `${cluster.totalWeight.toLocaleString()} kg`,
-                          },
-                          {
-                            label: "Distance",
-                            val: `${cluster.routeDistanceKm} km`,
-                          },
-                          {
-                            label: "Cost",
-                            val: `₹${cluster.estimatedCost.toLocaleString()}`,
-                          },
-                        ].map((m) => (
-                          <div key={m.label}>
+                          <div>
                             <div
                               style={{
-                                color: "var(--text-tertiary)",
-                                marginBottom: "2px",
-                              }}
-                            >
-                              {m.label}
-                            </div>
-                            <div
-                              style={{
-                                fontWeight: 650,
+                                fontSize: "14px",
+                                fontWeight: 700,
                                 color: "var(--text-primary)",
                               }}
                             >
-                              {m.val}
+                              Cluster {cluster.id.split("-")[1]}
                             </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Expand/Collapse */}
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        style={{
-                          width: "100%",
-                          justifyContent: "center",
-                          marginBottom: "10px",
-                        }}
-                        onClick={() =>
-                          setExpandedCluster(isExpanded ? null : cluster.id)
-                        }
-                      >
-                        <Package size={12} />
-                        View Shipments ({cluster.shipmentIds.length})
-                        {isExpanded ? (
-                          <ChevronUp size={12} />
-                        ) : (
-                          <ChevronDown size={12} />
-                        )}
-                      </button>
-
-                      {isExpanded && (
-                        <div
-                          style={{
-                            background: "var(--bg-secondary)",
-                            borderRadius: "8px",
-                            padding: "8px",
-                            marginBottom: "10px",
-                            fontSize: "11.5px",
-                            border: "1px solid var(--border-secondary)",
-                          }}
-                        >
-                          {cluster.shipmentIds.map((sid) => (
                             <div
-                              key={sid}
                               style={{
-                                padding: "5px 8px",
-                                borderBottom:
-                                  "1px solid var(--border-secondary)",
+                                fontSize: "13px",
+                                fontWeight: 600,
+                                color: "var(--lorri-primary)",
+                                marginTop: "4px",
                                 display: "flex",
-                                justifyContent: "space-between",
                                 alignItems: "center",
+                                gap: "6px",
                               }}
                             >
-                              <span
+                              <Truck
+                                size={14}
+                                style={{ color: "var(--lorri-primary)" }}
+                              />
+                              <span>
+                                {cluster.vehicleName ||
+                                  vehiclesMap[cluster.vehicleId]?.name ||
+                                  "Unknown Truck"}
+                              </span>
+                            </div>
+                          </div>
+                          <span
+                            className={`badge ${status === "accepted" ? "badge-success" : status === "rejected" ? "badge-danger" : "badge-warning"}`}
+                          >
+                            {status}
+                          </span>
+                        </div>
+
+                        {/* Utilization Bar */}
+                        <div style={{ marginBottom: "14px" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              fontSize: "11px",
+                              marginBottom: "6px",
+                            }}
+                          >
+                            <span style={{ color: "var(--text-secondary)" }}>
+                              Utilization
+                            </span>
+                            <span style={{ fontWeight: 700, color: utilColor }}>
+                              {cluster.utilizationPct}%
+                            </span>
+                          </div>
+                          <div className="progress-bar">
+                            <div
+                              className={`progress-bar-fill ${utilClass}`}
+                              style={{ width: `${cluster.utilizationPct}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Metrics */}
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "10px",
+                            fontSize: "12px",
+                            marginBottom: "14px",
+                          }}
+                        >
+                          {[
+                            {
+                              label: "Shipments",
+                              val: cluster.shipmentIds.length,
+                            },
+                            {
+                              label: "Weight",
+                              val: `${cluster.totalWeight.toLocaleString()} kg`,
+                            },
+                            {
+                              label: "Distance",
+                              val: `${cluster.routeDistanceKm} km`,
+                            },
+                            {
+                              label: "Cost",
+                              val: `₹${cluster.estimatedCost.toLocaleString()}`,
+                            },
+                          ].map((m) => (
+                            <div key={m.label}>
+                              <div
                                 style={{
-                                  fontFamily: "monospace",
-                                  color: "var(--lorri-primary)",
-                                  fontWeight: 600,
+                                  color: "var(--text-tertiary)",
+                                  marginBottom: "2px",
                                 }}
                               >
-                                {sid.toUpperCase()}
-                              </span>
-                              <span
-                                className="badge badge-ghost"
-                                style={{ fontSize: "10px" }}
+                                {m.label}
+                              </div>
+                              <div
+                                style={{
+                                  fontWeight: 650,
+                                  color: "var(--text-primary)",
+                                }}
                               >
-                                pending
-                              </span>
+                                {m.val}
+                              </div>
                             </div>
                           ))}
                         </div>
-                      )}
 
-                      {/* Actions */}
-                      {status === "pending" && (
-                        <div className="cluster-actions">
-                          <button
-                            className="btn btn-sm btn-success"
-                            style={{ flex: 1 }}
-                            onClick={() =>
-                              handleClusterAction(cluster.id, "accepted")
-                            }
-                          >
-                            <Check size={12} /> Accept
-                          </button>
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            style={{ flex: 1 }}
-                          >
-                            <Edit size={12} /> Modify
-                          </button>
-                          <button
-                            className="btn btn-sm btn-danger"
-                            onClick={() =>
-                              handleClusterAction(cluster.id, "rejected")
-                            }
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      )}
-
-                      {status !== "pending" && (
-                        <div
+                        {/* Expand/Collapse */}
+                        <button
+                          className="btn btn-ghost btn-sm"
                           style={{
-                            textAlign: "center",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            color:
-                              status === "accepted"
-                                ? "var(--lorri-success)"
-                                : "var(--lorri-danger)",
-                            padding: "8px 0 0",
+                            width: "100%",
+                            justifyContent: "center",
+                            marginBottom: "10px",
                           }}
+                          onClick={() =>
+                            setExpandedCluster(isExpanded ? null : cluster.id)
+                          }
                         >
-                          {status === "accepted"
-                            ? "✓ Cluster accepted"
-                            : "✗ Cluster rejected"}
-                        </div>
-                      )}
+                          <Package size={12} />
+                          View Shipments ({cluster.shipmentIds.length})
+                          {isExpanded ? (
+                            <ChevronUp size={12} />
+                          ) : (
+                            <ChevronDown size={12} />
+                          )}
+                        </button>
+
+                        {isExpanded && (
+                          <div
+                            style={{
+                              background: "var(--bg-secondary)",
+                              borderRadius: "8px",
+                              padding: "8px",
+                              marginBottom: "10px",
+                              fontSize: "11.5px",
+                              border: "1px solid var(--border-secondary)",
+                            }}
+                          >
+                            {cluster.shipmentIds.map((sid) => (
+                              <div
+                                key={sid}
+                                style={{
+                                  padding: "5px 8px",
+                                  borderBottom:
+                                    "1px solid var(--border-secondary)",
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    fontFamily: "monospace",
+                                    color: "var(--lorri-primary)",
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  {sid.toUpperCase()}
+                                </span>
+                                <span
+                                  className="badge badge-ghost"
+                                  style={{ fontSize: "10px" }}
+                                >
+                                  pending
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Actions */}
+                        {status === "pending" && (
+                          <div className="cluster-actions">
+                            <button
+                              className="btn btn-sm btn-success"
+                              style={{ flex: 1 }}
+                              onClick={() =>
+                                handleClusterAction(cluster.id, "accepted")
+                              }
+                            >
+                              <Check size={12} /> Accept
+                            </button>
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              style={{ flex: 1 }}
+                            >
+                              <Edit size={12} /> Modify
+                            </button>
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={() =>
+                                handleClusterAction(cluster.id, "rejected")
+                              }
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        )}
+
+                        {status !== "pending" && (
+                          <div
+                            style={{
+                              textAlign: "center",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              color:
+                                status === "accepted"
+                                  ? "var(--lorri-success)"
+                                  : "var(--lorri-danger)",
+                              padding: "8px 0 0",
+                            }}
+                          >
+                            {status === "accepted"
+                              ? "✓ Cluster accepted"
+                              : "✗ Cluster rejected — shipments returned to pending"}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
               </div>
             )}
+
+            {/* ── Re-run for rejected clusters ── */}
+            {hasRejectedClusters && !isRunning && (
+              <div
+                className="animate-fade-in"
+                style={{
+                  marginTop: "20px",
+                  background:
+                    "linear-gradient(135deg, rgba(99,91,255,0.06), rgba(139,92,246,0.04))",
+                  border: "1px solid rgba(99,91,255,0.20)",
+                  borderRadius: "var(--radius-lg)",
+                  padding: "20px 24px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "16px",
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: "14px",
+                      fontWeight: 700,
+                      color: "var(--text-primary)",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    Rejected Clusters Detected
+                  </div>
+                  <div
+                    style={{ fontSize: "12px", color: "var(--text-secondary)" }}
+                  >
+                    Shipments from rejected clusters have been returned to
+                    pending status. You can re-run the consolidation engine to
+                    create new optimized clusters for these shipments.
+                  </div>
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleRerunRejected}
+                  disabled={isRunning}
+                  style={{ flexShrink: 0 }}
+                >
+                  <Zap size={14} /> Re-run Engine
+                </button>
+              </div>
+            )}
+
+            {/* ── Navigation to Routes & Packing ── */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "16px",
+                marginTop: "24px",
+              }}
+            >
+              <Link href="/routes" style={{ textDecoration: "none" }}>
+                <div
+                  className="card"
+                  style={{
+                    padding: "24px",
+                    cursor: "pointer",
+                    borderColor: "rgba(14,165,233,0.25)",
+                    transition: "all 0.2s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "16px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "12px",
+                      background:
+                        "linear-gradient(135deg, rgba(14,165,233,0.12), rgba(99,91,255,0.08))",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Navigation size={22} style={{ color: "#0ea5e9" }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 700,
+                        color: "var(--text-primary)",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      View Optimized Routes
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      See routes on interactive map with stop-by-stop details
+                    </div>
+                  </div>
+                  <ArrowRight
+                    size={18}
+                    style={{ color: "var(--text-tertiary)" }}
+                  />
+                </div>
+              </Link>
+
+              <Link href="/packing" style={{ textDecoration: "none" }}>
+                <div
+                  className="card"
+                  style={{
+                    padding: "24px",
+                    cursor: "pointer",
+                    borderColor: "rgba(139,92,246,0.25)",
+                    transition: "all 0.2s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "16px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "12px",
+                      background:
+                        "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(99,91,255,0.08))",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Box size={22} style={{ color: "#8B5CF6" }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        fontSize: "15px",
+                        fontWeight: 700,
+                        color: "var(--text-primary)",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      View 3D Bin Packing
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      Visualize how shipments were packed into each vehicle
+                    </div>
+                  </div>
+                  <ArrowRight
+                    size={18}
+                    style={{ color: "var(--text-tertiary)" }}
+                  />
+                </div>
+              </Link>
+            </div>
           </div>
         )}
       </div>

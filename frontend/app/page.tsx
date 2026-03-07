@@ -30,7 +30,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { getDashboardData } from "@/lib/api";
+import { getDashboardData, checkReadiness } from "@/lib/api";
 import {
   mockUtilizationTrend,
   mockActivityFeed,
@@ -114,6 +114,11 @@ export default function DashboardPage() {
   const [kpisData, setKpisData] = useState(mockDashboardKPIs);
   const [trendData, setTrendData] = useState(mockUtilizationTrend);
   const [activityData, setActivityData] = useState(mockActivityFeed);
+  const [readinessData, setReadinessData] = useState<{
+    pending_shipments: number;
+    vehicles: number;
+    depots: number;
+  } | null>(null);
   const [costSavingsData, setCostSavingsData] = useState(
     mockUtilizationTrend.map((d) => ({
       date: d.day,
@@ -141,6 +146,12 @@ export default function DashboardPage() {
       .catch(() => {
         // Fallback to mock data — already set
       });
+
+    checkReadiness()
+      .then((data) => {
+        if (data?.summary) setReadinessData(data.summary);
+      })
+      .catch(() => {});
   }, []);
 
   // Build kpis array for rendering
@@ -190,27 +201,29 @@ export default function DashboardPage() {
         >
           {[
             {
-              label: "150 shipments active",
-              value: "150",
-              sublabel: "active today",
+              label: "Shipments",
+              value: readinessData
+                ? `${readinessData.pending_shipments}`
+                : kpis[0]?.value || "0",
+              sublabel: "pending shipments",
               colorClass: "",
             },
             {
-              label: "Consolidation rate",
-              value: "87%",
-              sublabel: "consolidated",
+              label: "Vehicles",
+              value: readinessData ? `${readinessData.vehicles}` : "0",
+              sublabel: "fleet vehicles",
               colorClass: "purple",
             },
             {
-              label: "Trips eliminated",
-              value: "16",
-              sublabel: "trips saved today",
+              label: "Depots",
+              value: readinessData ? `${readinessData.depots}` : "0",
+              sublabel: "depot locations",
               colorClass: "green",
             },
             {
-              label: "Cost saved today",
-              value: "₹1.4L",
-              sublabel: "31% below baseline",
+              label: "Cost saved",
+              value: kpis[3]?.value || "—",
+              sublabel: kpis[3]?.change || "vs baseline",
               colorClass: "amber",
             },
           ].map((s) => (
@@ -285,18 +298,28 @@ export default function DashboardPage() {
             </div>
             <div className="hero-stats-row">
               {[
-                { value: "150+", label: "Shipments processed\ndaily", cls: "" },
                 {
-                  value: "87%",
-                  label: "Avg vehicle\nutilization",
+                  value: readinessData
+                    ? `${readinessData.pending_shipments}`
+                    : "—",
+                  label: "Pending\nshipments",
+                  cls: "",
+                },
+                {
+                  value: readinessData ? `${readinessData.vehicles}` : "—",
+                  label: "Fleet\nvehicles",
                   cls: "purple",
                 },
                 {
-                  value: "31%",
-                  label: "Average cost\nreduction",
+                  value: readinessData ? `${readinessData.depots}` : "—",
+                  label: "Depot\nlocations",
                   cls: "green",
                 },
-                { value: "33%", label: "CO₂ emissions\nreduced", cls: "amber" },
+                {
+                  value: kpis[4]?.value || "—",
+                  label: "CO₂ emissions\nreduced",
+                  cls: "amber",
+                },
               ].map((s) => (
                 <div key={s.label} className="hero-stat">
                   <div className={`hero-stat-value ${s.cls}`}>{s.value}</div>

@@ -9,9 +9,51 @@ routing_bp = Blueprint("routing", __name__)
 
 @routing_bp.route("/api/routes", methods=["GET"])
 def list_routes():
+    """Return all routes enriched with plan metadata for grouping by run."""
     sb = get_supabase()
     result = sb.table("routes").select("*").execute()
-    return jsonify(result.data)
+    routes = result.data or []
+
+    # Enrich each route with cluster → plan info
+    cluster_ids = list({r["cluster_id"] for r in routes if r.get("cluster_id")})
+    cluster_map = {}
+    plan_map = {}
+
+    if cluster_ids:
+        try:
+            cl_result = sb.table("clusters").select("id,plan_id,status,shipment_ids:cluster_shipments(shipment_id)").in_("id", cluster_ids).execute()
+            for cl in (cl_result.data or []):
+                cluster_map[cl["id"]] = cl
+        except Exception:
+            # Fallback: fetch without join
+            try:
+                cl_result = sb.table("clusters").select("id,plan_id,status").in_("id", cluster_ids).execute()
+                for cl in (cl_result.data or []):
+                    cluster_map[cl["id"]] = cl
+            except Exception:
+                pass
+
+        plan_ids = list({cl.get("plan_id") for cl in cluster_map.values() if cl.get("plan_id")})
+        if plan_ids:
+            try:
+                pl_result = sb.table("consolidation_plans").select("id,name,created_at,status").in_("id", plan_ids).execute()
+                for pl in (pl_result.data or []):
+                    plan_map[pl["id"]] = pl
+            except Exception:
+                pass
+
+    for r in routes:
+        cid = r.get("cluster_id")
+        cl = cluster_map.get(cid, {})
+        pid = cl.get("plan_id")
+        plan = plan_map.get(pid, {})
+        r["plan_id"] = pid
+        r["plan_name"] = plan.get("name", "")
+        r["plan_created_at"] = plan.get("created_at", "")
+        r["plan_status"] = plan.get("status", "")
+        r["cluster_status"] = cl.get("status", "")
+
+    return jsonify(routes)
 
 
 @routing_bp.route("/api/routes/<route_id>", methods=["GET"])

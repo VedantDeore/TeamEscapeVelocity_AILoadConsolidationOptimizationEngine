@@ -1,42 +1,100 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import dynamic from 'next/dynamic';
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import dynamic from "next/dynamic";
 import {
-  RotateCcw, Play, Pause, Truck, Plus, Trash2, Crosshair,
-  Cpu, Printer, Copy, X, Download, Upload, Shuffle, Camera,
-  Zap, Search, Undo2, Redo2, Eye, EyeOff, Flame, Move3D,
-  ListOrdered, Grid3X3, Ruler, Settings,
-} from 'lucide-react';
-import { getShipments, getVehicles, clientSidePack, type ClientPackingItem, type ClientContainer } from '@/lib/api';
-import type { PackingResultData, PackingStep, ViewPreset } from '@/components/packing-3d/PackingVisualizer3D';
+  RotateCcw,
+  Play,
+  Pause,
+  Truck,
+  Plus,
+  Trash2,
+  Crosshair,
+  Cpu,
+  Printer,
+  Copy,
+  X,
+  Download,
+  Upload,
+  Shuffle,
+  Camera,
+  Zap,
+  Search,
+  Undo2,
+  Redo2,
+  Eye,
+  EyeOff,
+  Flame,
+  Move3D,
+  ListOrdered,
+  Grid3X3,
+  Ruler,
+  Settings,
+} from "lucide-react";
+import {
+  getShipments,
+  getVehicles,
+  getLatestPlan,
+  clientSidePack,
+  type ClientPackingItem,
+  type ClientContainer,
+} from "@/lib/api";
+import type {
+  PackingResultData,
+  PackingStep,
+  ViewPreset,
+} from "@/components/packing-3d/PackingVisualizer3D";
 
-const PackingVisualizer3D = dynamic(() => import('@/components/packing-3d/PackingVisualizer3D'), {
-  ssr: false,
-  loading: () => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: '#f5f7fa', borderRadius: 12 }}>
-      <Cpu className="animate-spin" size={24} style={{ color: '#94a3b8' }} />
-    </div>
-  ),
-});
+const PackingVisualizer3D = dynamic(
+  () => import("@/components/packing-3d/PackingVisualizer3D"),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          background: "#f5f7fa",
+          borderRadius: 12,
+        }}
+      >
+        <Cpu className="animate-spin" size={24} style={{ color: "#94a3b8" }} />
+      </div>
+    ),
+  },
+);
 
 /* ═══════════════════════════════════════════════════════════════════════
    Constants & helpers
    ═══════════════════════════════════════════════════════════════════════ */
 const COLORS = [
-  '#635BFF', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444',
-  '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316',
-  '#14b8a6', '#a855f7', '#eab308', '#3b82f6', '#e11d48',
+  "#635BFF",
+  "#0ea5e9",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#ec4899",
+  "#06b6d4",
+  "#84cc16",
+  "#f97316",
+  "#14b8a6",
+  "#a855f7",
+  "#eab308",
+  "#3b82f6",
+  "#e11d48",
 ];
 
 const VIEW_LABELS: { key: ViewPreset; icon: string }[] = [
-  { key: 'perspective', icon: '⬡' },
-  { key: 'front', icon: '▣' },
-  { key: 'back', icon: '▤' },
-  { key: 'left', icon: '◧' },
-  { key: 'right', icon: '◨' },
-  { key: 'top', icon: '⬒' },
-  { key: 'inside', icon: '◉' },
+  { key: "perspective", icon: "⬡" },
+  { key: "front", icon: "▣" },
+  { key: "back", icon: "▤" },
+  { key: "left", icon: "◧" },
+  { key: "right", icon: "◨" },
+  { key: "top", icon: "⬒" },
+  { key: "inside", icon: "◉" },
 ];
 
 /* ── Cargo item model ─────────────────────────────────────────────── */
@@ -71,7 +129,10 @@ interface VehicleType {
   maxWeightKg: number;
 }
 
-function buildFromItems(items: CargoItem[], vehicle: VehicleType): PackingResultData {
+function buildFromItems(
+  items: CargoItem[],
+  vehicle: VehicleType,
+): PackingResultData {
   const expanded: ClientPackingItem[] = [];
   for (const item of items) {
     for (let q = 0; q < item.quantity; q++) {
@@ -142,9 +203,11 @@ function buildFromItems(items: CargoItem[], vehicle: VehicleType): PackingResult
         height: p.height,
         depth: p.depth,
         weight: p.weight,
-        volume_m3: parseFloat(((p.width * p.height * p.depth) / 1e6).toFixed(4)),
-        cargo_type: p.cargoType || 'general',
-        priority: p.priority || 'normal',
+        volume_m3: parseFloat(
+          ((p.width * p.height * p.depth) / 1e6).toFixed(4),
+        ),
+        cargo_type: p.cargoType || "general",
+        priority: p.priority || "normal",
         stackable: true,
         color: p.color,
       },
@@ -179,7 +242,7 @@ function buildFromItems(items: CargoItem[], vehicle: VehicleType): PackingResult
         z: parseFloat(cogZ.toFixed(2)),
       },
       container_volume_m3: parseFloat((containerVolume / 1e6).toFixed(4)),
-      algorithm: 'EP · 6-Strategy',
+      algorithm: "EP · 6-Strategy",
       computation_time_ms: parseFloat(compTime.toFixed(1)),
     },
   };
@@ -189,7 +252,7 @@ function buildFromItems(items: CargoItem[], vehicle: VehicleType): PackingResult
 function UtilRing({
   pct,
   label,
-  color = '#635BFF',
+  color = "#635BFF",
   size = 78,
 }: {
   pct: number;
@@ -201,7 +264,14 @@ function UtilRing({
     C = 2 * Math.PI * r;
   return (
     <svg viewBox="0 0 100 100" style={{ width: size, height: size }}>
-      <circle cx="50" cy="50" r={r} fill="none" stroke="#f0f3f7" strokeWidth="7" />
+      <circle
+        cx="50"
+        cy="50"
+        r={r}
+        fill="none"
+        stroke="#f0f3f7"
+        strokeWidth="7"
+      />
       <circle
         cx="50"
         cy="50"
@@ -212,16 +282,16 @@ function UtilRing({
         strokeDasharray={`${(pct / 100) * C} ${C}`}
         strokeLinecap="round"
         style={{
-          transform: 'rotate(-90deg)',
-          transformOrigin: '50% 50%',
-          transition: 'stroke-dasharray .6s ease',
+          transform: "rotate(-90deg)",
+          transformOrigin: "50% 50%",
+          transition: "stroke-dasharray .6s ease",
         }}
       />
       <text
         x="50"
         y="46"
         textAnchor="middle"
-        style={{ fontSize: 15, fontWeight: 700, fill: '#0a2540' }}
+        style={{ fontSize: 15, fontWeight: 700, fill: "#0a2540" }}
       >
         {pct.toFixed(1)}%
       </text>
@@ -232,9 +302,9 @@ function UtilRing({
         style={
           {
             fontSize: 7,
-            fill: '#8792a2',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
+            fill: "#8792a2",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
           } as React.CSSProperties
         }
       >
@@ -258,13 +328,13 @@ function Badge({
     <span
       title={title}
       style={{
-        display: 'inline-block',
-        padding: '1px 5px',
+        display: "inline-block",
+        padding: "1px 5px",
         borderRadius: 4,
         fontSize: 9,
         fontWeight: 700,
-        background: '#fef3c7',
-        color: '#92400e',
+        background: "#fef3c7",
+        color: "#92400e",
         marginLeft: 3,
       }}
     >
@@ -285,38 +355,38 @@ function Toggle({
   return (
     <div
       style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '7px 0',
-        borderBottom: '1px solid #f0f3f7',
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "7px 0",
+        borderBottom: "1px solid #f0f3f7",
         fontSize: 11.5,
       }}
     >
-      <span style={{ color: '#425466', fontWeight: 500 }}>{label}</span>
+      <span style={{ color: "#425466", fontWeight: 500 }}>{label}</span>
       <div
         onClick={onChange}
         style={{
           width: 34,
           height: 18,
           borderRadius: 9,
-          background: value ? '#635BFF' : '#e3e8ee',
-          cursor: 'pointer',
-          position: 'relative',
-          transition: 'background .2s',
+          background: value ? "#635BFF" : "#e3e8ee",
+          cursor: "pointer",
+          position: "relative",
+          transition: "background .2s",
         }}
       >
         <div
           style={{
-            position: 'absolute',
+            position: "absolute",
             top: 2,
             left: value ? 16 : 2,
             width: 14,
             height: 14,
-            borderRadius: '50%',
-            background: '#fff',
-            boxShadow: '0 1px 3px rgba(0,0,0,.15)',
-            transition: 'left .2s',
+            borderRadius: "50%",
+            background: "#fff",
+            boxShadow: "0 1px 3px rgba(0,0,0,.15)",
+            transition: "left .2s",
           }}
         />
       </div>
@@ -332,7 +402,9 @@ export default function PackingPage() {
   const [vehicles, setVehicles] = useState<VehicleType[]>([]);
   const [selectedVehicleIdx, setSelectedVehicleIdx] = useState(0);
   const [cargoItems, setCargoItems] = useState<CargoItem[]>([]);
-  const [packingData, setPackingData] = useState<PackingResultData | null>(null);
+  const [packingData, setPackingData] = useState<PackingResultData | null>(
+    null,
+  );
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -340,7 +412,7 @@ export default function PackingPage() {
   const animRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /* ── State: view toggles ───────────────────────────────────────── */
-  const [viewPreset, setViewPreset] = useState<ViewPreset>('perspective');
+  const [viewPreset, setViewPreset] = useState<ViewPreset>("perspective");
   const [showLabels, setShowLabels] = useState(true);
   const [showCOG, setShowCOG] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
@@ -354,17 +426,21 @@ export default function PackingPage() {
 
   /* ── State: UI ──────────────────────────────────────────────────── */
   const [activeTab, setActiveTab] = useState<
-    'items' | 'container' | 'report' | 'weight' | 'settings'
-  >('items');
+    "items" | "container" | "report" | "weight" | "settings"
+  >("items");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [undoStack, setUndoStack] = useState<CargoItem[][]>([]);
   const [redoStack, setRedoStack] = useState<CargoItem[][]>([]);
   const screenshotRef = useRef<(() => string | null) | null>(null);
+  const [clusters, setClusters] = useState<any[]>([]);
+  const [selectedClusterIdx, setSelectedClusterIdx] = useState<number | null>(
+    null,
+  );
 
   const vehicle = vehicles[selectedVehicleIdx] || {
-    id: '',
-    name: 'No Vehicle',
+    id: "",
+    name: "No Vehicle",
     widthCm: 0,
     heightCm: 0,
     lengthCm: 0,
@@ -404,7 +480,7 @@ export default function PackingPage() {
       })
       .catch(() => {});
 
-    getShipments({ limit: '12' })
+    getShipments({ limit: "12" })
       .then((data) => {
         if (data?.length) {
           const items = data.slice(0, 12).map((s: any, i: number) => ({
@@ -417,12 +493,21 @@ export default function PackingPage() {
             quantity: 1,
             color: COLORS[i % COLORS.length],
             stackable: true,
-            keepUpright: s.cargo_type === 'fragile',
+            keepUpright: s.cargo_type === "fragile",
             doNotRotate: false,
-            cargoType: s.cargo_type || 'general',
-            priority: s.priority || 'normal',
+            cargoType: s.cargo_type || "general",
+            priority: s.priority || "normal",
           }));
           setCargoItems(items);
+        }
+      })
+      .catch(() => {});
+
+    // Load clusters from latest consolidation plan
+    getLatestPlan()
+      .then((data) => {
+        if (data?.clusters?.length) {
+          setClusters(data.clusters);
         }
       })
       .catch(() => {});
@@ -512,7 +597,7 @@ export default function PackingPage() {
 
   /* ── Item CRUD ──────────────────────────────────────────────────── */
   const handleAddItem = useCallback(
-    (item: Omit<CargoItem, 'id' | 'color'>) => {
+    (item: Omit<CargoItem, "id" | "color">) => {
       pushUndo();
       const id = `custom-${Date.now()}`;
       const color = COLORS[cargoItems.length % COLORS.length];
@@ -550,7 +635,7 @@ export default function PackingPage() {
   );
 
   const handleToggleConstraint = useCallback(
-    (id: string, field: 'stackable' | 'keepUpright' | 'doNotRotate') => {
+    (id: string, field: "stackable" | "keepUpright" | "doNotRotate") => {
       pushUndo();
       setCargoItems((prev) =>
         prev.map((i) => (i.id === id ? { ...i, [field]: !i[field] } : i)),
@@ -575,7 +660,7 @@ export default function PackingPage() {
       randCounter.current++;
       items.push({
         id: `rand-${randCounter.current}`,
-        label: `PKG-${String(randCounter.current).padStart(3, '0')}`,
+        label: `PKG-${String(randCounter.current).padStart(3, "0")}`,
         lengthCm: 50 + Math.floor(Math.random() * 200),
         widthCm: 40 + Math.floor(Math.random() * 150),
         heightCm: 30 + Math.floor(Math.random() * 150),
@@ -585,10 +670,10 @@ export default function PackingPage() {
         stackable: Math.random() > 0.3,
         keepUpright: Math.random() < 0.2,
         doNotRotate: Math.random() < 0.1,
-        cargoType: ['general', 'fragile', 'refrigerated', 'hazardous'][
+        cargoType: ["general", "fragile", "refrigerated", "hazardous"][
           Math.floor(Math.random() * 4)
         ],
-        priority: ['normal', 'express', 'critical'][
+        priority: ["normal", "express", "critical"][
           Math.floor(Math.random() * 3)
         ],
       });
@@ -615,9 +700,7 @@ export default function PackingPage() {
       let bestCap = 0;
       for (let i = 0; i < vehicles.length; i++) {
         const cap =
-          vehicles[i].lengthCm *
-          vehicles[i].widthCm *
-          vehicles[i].heightCm;
+          vehicles[i].lengthCm * vehicles[i].widthCm * vehicles[i].heightCm;
         if (cap > bestCap) {
           bestCap = cap;
           bestIdx = i;
@@ -630,19 +713,19 @@ export default function PackingPage() {
   /* ── Export / Import JSON ───────────────────────────────────────── */
   const exportJSON = useCallback(() => {
     const json = JSON.stringify(cargoItems, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
+    const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'cargo-items.json';
+    a.download = "cargo-items.json";
     a.click();
     URL.revokeObjectURL(url);
   }, [cargoItems]);
 
   const importJSON = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
@@ -667,7 +750,7 @@ export default function PackingPage() {
   const takeScreenshot = useCallback(() => {
     const dataUrl = screenshotRef.current?.();
     if (!dataUrl) return;
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = dataUrl;
     a.download = `packing-3d-${Date.now()}.png`;
     a.click();
@@ -683,35 +766,35 @@ export default function PackingPage() {
       )
         return;
       switch (e.key.toLowerCase()) {
-        case 'r':
+        case "r":
           setAutoRotate((a) => !a);
           break;
-        case ' ':
+        case " ":
           e.preventDefault();
           handleAnimate();
           break;
-        case 'escape':
+        case "escape":
           setSelectedItem(null);
           break;
-        case 'l':
+        case "l":
           setShowLabels((l) => !l);
           break;
-        case 'g':
+        case "g":
           setShowGrid((g) => !g);
           break;
-        case 'h':
+        case "h":
           setHeatmapMode((h) => !h);
           break;
-        case 'e':
+        case "e":
           setExplodedView((v) => !v);
           break;
-        case 'z':
+        case "z":
           if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
             undo();
           }
           break;
-        case 'y':
+        case "y":
           if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
             redo();
@@ -719,8 +802,8 @@ export default function PackingPage() {
           break;
       }
     };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
   }, [handleAnimate, undo, redo]);
 
   /* ── Computed ────────────────────────────────────────────────────── */
@@ -736,8 +819,7 @@ export default function PackingPage() {
   const weightDist = useMemo(() => {
     if (!packingData || !m) return { front: 50, rear: 50 };
     const totalD = packingData.container.depth;
-    const rearPct =
-      totalD > 0 ? (m.center_of_gravity.z / totalD) * 100 : 50;
+    const rearPct = totalD > 0 ? (m.center_of_gravity.z / totalD) * 100 : 50;
     return {
       front: parseFloat((100 - rearPct).toFixed(1)),
       rear: parseFloat(rearPct.toFixed(1)),
@@ -747,7 +829,7 @@ export default function PackingPage() {
   const freeVolM3 = (m?.container_volume_m3 || 0) - (m?.total_volume_m3 || 0);
   const remainingWt = customDims.maxWeightKg - (m?.total_weight_kg || 0);
   const utilColor = (pct: number) =>
-    pct > 85 ? '#10b981' : pct > 60 ? '#f59e0b' : '#ef4444';
+    pct > 85 ? "#10b981" : pct > 60 ? "#f59e0b" : "#ef4444";
 
   const filteredItems = searchQuery
     ? cargoItems.filter(
@@ -768,35 +850,35 @@ export default function PackingPage() {
   return (
     <div
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        overflow: 'hidden',
-        background: '#f8f9fc',
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        overflow: "hidden",
+        background: "#f8f9fc",
       }}
     >
       {/* ────── HEADER ────── */}
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 16px',
-          borderBottom: '1px solid #e3e8ee',
-          background: '#fff',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "8px 16px",
+          borderBottom: "1px solid #e3e8ee",
+          background: "#fff",
           flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div
             style={{
-              background: 'linear-gradient(135deg,#635BFF,#10b981)',
+              background: "linear-gradient(135deg,#635BFF,#10b981)",
               borderRadius: 8,
               width: 30,
               height: 30,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
               fontSize: 15,
             }}
           >
@@ -807,8 +889,8 @@ export default function PackingPage() {
               style={{
                 fontWeight: 700,
                 fontSize: 14,
-                color: '#0a2540',
-                letterSpacing: '.5px',
+                color: "#0a2540",
+                letterSpacing: ".5px",
               }}
             >
               LORRI · 3D PACK SIM
@@ -816,8 +898,8 @@ export default function PackingPage() {
             <div
               style={{
                 fontSize: 9,
-                color: '#8792a2',
-                letterSpacing: '.5px',
+                color: "#8792a2",
+                letterSpacing: ".5px",
               }}
             >
               AI LOAD CONSOLIDATION ENGINE
@@ -826,54 +908,46 @@ export default function PackingPage() {
         </div>
 
         {/* Truck pills */}
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: "flex", gap: 4 }}>
           {vehicles.map((v, i) => (
             <button
               key={v.id}
               onClick={() => setSelectedVehicleIdx(i)}
               style={{
-                padding: '5px 10px',
+                padding: "5px 10px",
                 borderRadius: 999,
                 fontSize: 10.5,
                 fontWeight: 550,
-                border: '1px solid',
-                cursor: 'pointer',
-                transition: 'all .15s',
-                background: selectedVehicleIdx === i ? '#635BFF' : '#fff',
-                color: selectedVehicleIdx === i ? '#fff' : '#425466',
-                borderColor:
-                  selectedVehicleIdx === i ? '#635BFF' : '#e3e8ee',
+                border: "1px solid",
+                cursor: "pointer",
+                transition: "all .15s",
+                background: selectedVehicleIdx === i ? "#635BFF" : "#fff",
+                color: selectedVehicleIdx === i ? "#fff" : "#425466",
+                borderColor: selectedVehicleIdx === i ? "#635BFF" : "#e3e8ee",
               }}
             >
-              <Truck
-                size={10}
-                style={{ marginRight: 3, verticalAlign: -1 }}
-              />
+              <Truck size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
               {v.name}
             </button>
           ))}
         </div>
 
         {/* Actions */}
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <Btn
             onClick={() => setAutoRotate((a) => !a)}
             active={autoRotate}
             accent="#635BFF"
-            label={autoRotate ? '⏸ AUTO' : '▶ AUTO'}
+            label={autoRotate ? "⏸ AUTO" : "▶ AUTO"}
           />
           <Btn
             onClick={handleAnimate}
             active={isAnimating}
             accent="#f59e0b"
-            label={isAnimating ? '⏳ LOADING...' : '▶ ANIMATE'}
+            label={isAnimating ? "⏳ LOADING..." : "▶ ANIMATE"}
           />
           <Btn onClick={handleShowAll} accent="#10b981" label="SHOW ALL" />
-          <Btn
-            onClick={handleRecalculate}
-            accent="#0ea5e9"
-            label="⚡ PACK"
-          />
+          <Btn onClick={handleRecalculate} accent="#0ea5e9" label="⚡ PACK" />
           <button
             onClick={takeScreenshot}
             title="Screenshot"
@@ -892,9 +966,9 @@ export default function PackingPage() {
       </div>
 
       {/* ────── MAIN ────── */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* ── 3D VIEWPORT ── */}
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
           <PackingVisualizer3D
             data={packingData}
             isAnimating={isAnimating}
@@ -920,11 +994,11 @@ export default function PackingPage() {
           {/* View presets overlay */}
           <div
             style={{
-              position: 'absolute',
+              position: "absolute",
               top: 10,
               left: 10,
-              display: 'flex',
-              flexDirection: 'column',
+              display: "flex",
+              flexDirection: "column",
               gap: 3,
               zIndex: 10,
             }}
@@ -934,19 +1008,17 @@ export default function PackingPage() {
                 key={v.key}
                 onClick={() => setViewPreset(v.key)}
                 style={{
-                  padding: '3px 8px',
+                  padding: "3px 8px",
                   borderRadius: 5,
                   fontSize: 9.5,
                   fontWeight: 600,
                   background:
-                    viewPreset === v.key
-                      ? '#635BFF'
-                      : 'rgba(255,255,255,.88)',
-                  color: viewPreset === v.key ? '#fff' : '#425466',
-                  border: `1px solid ${viewPreset === v.key ? '#635BFF' : 'rgba(227,232,238,.6)'}`,
-                  cursor: 'pointer',
-                  backdropFilter: 'blur(4px)',
-                  letterSpacing: '.5px',
+                    viewPreset === v.key ? "#635BFF" : "rgba(255,255,255,.88)",
+                  color: viewPreset === v.key ? "#fff" : "#425466",
+                  border: `1px solid ${viewPreset === v.key ? "#635BFF" : "rgba(227,232,238,.6)"}`,
+                  cursor: "pointer",
+                  backdropFilter: "blur(4px)",
+                  letterSpacing: ".5px",
                 }}
               >
                 <span style={{ marginRight: 3 }}>{v.icon}</span>
@@ -955,21 +1027,21 @@ export default function PackingPage() {
             ))}
             <button
               onClick={() => {
-                setViewPreset('perspective');
+                setViewPreset("perspective");
                 setAutoRotate(false);
               }}
               style={{
-                padding: '3px 8px',
+                padding: "3px 8px",
                 borderRadius: 5,
                 fontSize: 9.5,
                 fontWeight: 600,
                 marginTop: 2,
-                background: 'rgba(255,255,255,.88)',
-                color: '#8792a2',
-                border: '1px solid rgba(227,232,238,.6)',
-                cursor: 'pointer',
-                backdropFilter: 'blur(4px)',
-                letterSpacing: '.5px',
+                background: "rgba(255,255,255,.88)",
+                color: "#8792a2",
+                border: "1px solid rgba(227,232,238,.6)",
+                cursor: "pointer",
+                backdropFilter: "blur(4px)",
+                letterSpacing: ".5px",
               }}
             >
               ↺ RESET
@@ -979,14 +1051,14 @@ export default function PackingPage() {
           {/* Utilization overlay */}
           <div
             style={{
-              position: 'absolute',
+              position: "absolute",
               bottom: 12,
               left: 12,
-              background: 'rgba(255,255,255,.92)',
-              border: '1px solid #e3e8ee',
+              background: "rgba(255,255,255,.92)",
+              border: "1px solid #e3e8ee",
               borderRadius: 10,
-              padding: '10px 14px',
-              backdropFilter: 'blur(8px)',
+              padding: "10px 14px",
+              backdropFilter: "blur(8px)",
               minWidth: 190,
               zIndex: 10,
             }}
@@ -995,7 +1067,7 @@ export default function PackingPage() {
               style={{
                 fontSize: 8,
                 letterSpacing: 2,
-                color: '#8792a2',
+                color: "#8792a2",
                 fontWeight: 700,
                 marginBottom: 6,
               }}
@@ -1004,17 +1076,17 @@ export default function PackingPage() {
             </div>
             {[
               {
-                label: 'VOLUME',
+                label: "VOLUME",
                 value: m?.volume_utilization_pct || 0,
-                suffix: '%',
+                suffix: "%",
               },
               {
-                label: 'WEIGHT',
+                label: "WEIGHT",
                 value: m?.weight_utilization_pct || 0,
-                suffix: '%',
+                suffix: "%",
               },
               {
-                label: 'PLACED',
+                label: "PLACED",
                 value: m?.total_items || 0,
                 suffix: `/${(m?.total_items || 0) + (m?.unpacked_count || 0)} pkgs`,
               },
@@ -1022,41 +1094,41 @@ export default function PackingPage() {
               <div key={s.label} style={{ marginBottom: 5 }}>
                 <div
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
+                    display: "flex",
+                    justifyContent: "space-between",
                     fontSize: 10,
                     marginBottom: 2,
                   }}
                 >
-                  <span style={{ color: '#8792a2' }}>{s.label}</span>
+                  <span style={{ color: "#8792a2" }}>{s.label}</span>
                   <span
                     style={{
                       color: utilColor(
-                        typeof s.value === 'number' ? s.value : 0,
+                        typeof s.value === "number" ? s.value : 0,
                       ),
                       fontWeight: 700,
                     }}
                   >
-                    {typeof s.value === 'number' ? s.value.toFixed(1) : s.value}
+                    {typeof s.value === "number" ? s.value.toFixed(1) : s.value}
                     {s.suffix}
                   </span>
                 </div>
-                {s.suffix === '%' && (
+                {s.suffix === "%" && (
                   <div
                     style={{
                       height: 4,
-                      background: '#f0f3f7',
+                      background: "#f0f3f7",
                       borderRadius: 2,
-                      overflow: 'hidden',
+                      overflow: "hidden",
                     }}
                   >
                     <div
                       style={{
                         width: `${Math.min(s.value as number, 100)}%`,
-                        height: '100%',
+                        height: "100%",
                         background: utilColor(s.value as number),
                         borderRadius: 2,
-                        transition: 'width .5s ease',
+                        transition: "width .5s ease",
                       }}
                     />
                   </div>
@@ -1069,16 +1141,16 @@ export default function PackingPage() {
           {isAnimating && step && (
             <div
               style={{
-                position: 'absolute',
+                position: "absolute",
                 top: 12,
                 right: 12,
-                background: 'rgba(255,255,255,.92)',
+                background: "rgba(255,255,255,.92)",
                 borderRadius: 10,
-                padding: '10px 14px',
+                padding: "10px 14px",
                 fontSize: 12,
-                color: '#0a2540',
-                boxShadow: '0 4px 16px rgba(0,0,0,.10)',
-                border: '1px solid #e3e8ee',
+                color: "#0a2540",
+                boxShadow: "0 4px 16px rgba(0,0,0,.10)",
+                border: "1px solid #e3e8ee",
                 maxWidth: 220,
                 zIndex: 10,
               }}
@@ -1086,23 +1158,21 @@ export default function PackingPage() {
               <div
                 style={{
                   fontWeight: 700,
-                  color: '#635BFF',
+                  color: "#635BFF",
                   marginBottom: 4,
                 }}
               >
                 Step {step.step_number} / {step.total_items}
               </div>
               <div>
-                Placing{' '}
+                Placing{" "}
                 <span style={{ color: step.color, fontWeight: 600 }}>
                   {step.item_label}
                 </span>
               </div>
-              <div
-                style={{ marginTop: 3, color: '#8792a2', fontSize: 11 }}
-              >
-                Util:{' '}
-                <span style={{ color: '#10b981', fontWeight: 600 }}>
+              <div style={{ marginTop: 3, color: "#8792a2", fontSize: 11 }}>
+                Util:{" "}
+                <span style={{ color: "#10b981", fontWeight: 600 }}>
                   {step.utilization_pct.toFixed(1)}%
                 </span>
               </div>
@@ -1113,22 +1183,22 @@ export default function PackingPage() {
           {selectedItem && selectedPlacement && !isAnimating && (
             <div
               style={{
-                position: 'absolute',
+                position: "absolute",
                 top: 12,
                 right: 12,
-                background: 'rgba(255,255,255,.95)',
+                background: "rgba(255,255,255,.95)",
                 border: `1px solid ${selectedPlacement.item.color}44`,
                 borderRadius: 10,
-                padding: '12px 16px',
-                backdropFilter: 'blur(8px)',
+                padding: "12px 16px",
+                backdropFilter: "blur(8px)",
                 minWidth: 190,
                 zIndex: 10,
               }}
             >
               <div
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
+                  display: "flex",
+                  alignItems: "center",
                   gap: 8,
                   marginBottom: 8,
                 }}
@@ -1145,7 +1215,7 @@ export default function PackingPage() {
                   style={{
                     fontSize: 12,
                     fontWeight: 700,
-                    color: '#0a2540',
+                    color: "#0a2540",
                   }}
                 >
                   {selectedPlacement.item.label}
@@ -1153,11 +1223,11 @@ export default function PackingPage() {
                 <button
                   onClick={() => setSelectedItem(null)}
                   style={{
-                    marginLeft: 'auto',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: '#8792a2',
+                    marginLeft: "auto",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "#8792a2",
                     padding: 0,
                   }}
                 >
@@ -1167,33 +1237,33 @@ export default function PackingPage() {
               {(
                 [
                   [
-                    'Dimensions',
+                    "Dimensions",
                     `${selectedPlacement.oriented_width}×${selectedPlacement.oriented_height}×${selectedPlacement.oriented_depth} cm`,
                   ],
                   [
-                    'Position',
+                    "Position",
                     `(${selectedPlacement.position.x.toFixed(0)}, ${selectedPlacement.position.y.toFixed(0)}, ${selectedPlacement.position.z.toFixed(0)})`,
                   ],
-                  ['Weight', `${selectedPlacement.item.weight} kg`],
+                  ["Weight", `${selectedPlacement.item.weight} kg`],
                   [
-                    'Volume',
+                    "Volume",
                     `${selectedPlacement.item.volume_m3.toFixed(4)} m³`,
                   ],
-                  ['Type', selectedPlacement.item.cargo_type],
+                  ["Type", selectedPlacement.item.cargo_type],
                 ] as [string, string][]
               ).map(([k, v]) => (
                 <div
                   key={k}
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
+                    display: "flex",
+                    justifyContent: "space-between",
                     fontSize: 10.5,
                     marginBottom: 3,
                   }}
                 >
-                  <span style={{ color: '#8792a2' }}>{k}</span>
+                  <span style={{ color: "#8792a2" }}>{k}</span>
                   <span
-                    style={{ fontWeight: 600, textTransform: 'capitalize' }}
+                    style={{ fontWeight: 600, textTransform: "capitalize" }}
                   >
                     {v}
                   </span>
@@ -1205,14 +1275,14 @@ export default function PackingPage() {
           {/* Controls hint */}
           <div
             style={{
-              position: 'absolute',
+              position: "absolute",
               bottom: 12,
               right: 12,
               fontSize: 9,
-              color: '#8792a2',
-              textAlign: 'right',
+              color: "#8792a2",
+              textAlign: "right",
               lineHeight: 1.8,
-              letterSpacing: '.3px',
+              letterSpacing: ".3px",
               zIndex: 10,
             }}
           >
@@ -1233,106 +1303,189 @@ export default function PackingPage() {
           style={{
             width: 300,
             flexShrink: 0,
-            borderLeft: '1px solid #e3e8ee',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            background: '#fff',
+            borderLeft: "1px solid #e3e8ee",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            background: "#fff",
           }}
         >
           {/* Tab bar */}
           <div
             style={{
-              display: 'flex',
-              borderBottom: '1px solid #e3e8ee',
+              display: "flex",
+              borderBottom: "1px solid #e3e8ee",
               flexShrink: 0,
             }}
           >
             {(
-              ['items', 'container', 'report', 'weight', 'settings'] as const
+              ["items", "container", "report", "weight", "settings"] as const
             ).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 style={{
                   flex: 1,
-                  padding: '9px 0',
+                  padding: "9px 0",
                   fontSize: 9,
                   fontWeight: 650,
-                  border: 'none',
-                  borderBottom: `2px solid ${activeTab === tab ? '#635BFF' : 'transparent'}`,
-                  cursor: 'pointer',
-                  color: activeTab === tab ? '#635BFF' : '#8792a2',
-                  background: 'none',
-                  textTransform: 'uppercase',
-                  letterSpacing: '.06em',
+                  border: "none",
+                  borderBottom: `2px solid ${activeTab === tab ? "#635BFF" : "transparent"}`,
+                  cursor: "pointer",
+                  color: activeTab === tab ? "#635BFF" : "#8792a2",
+                  background: "none",
+                  textTransform: "uppercase",
+                  letterSpacing: ".06em",
                 }}
               >
-                {tab === 'settings' ? '⚙' : tab}
+                {tab === "settings" ? "⚙" : tab}
               </button>
             ))}
           </div>
 
           {/* Tab content */}
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ flex: 1, overflowY: "auto" }}>
             {/* ────── ITEMS TAB ────── */}
-            {activeTab === 'items' && (
+            {activeTab === "items" && (
               <>
+                {/* Cluster selector */}
+                {clusters.length > 0 && (
+                  <div
+                    style={{
+                      padding: "8px 12px",
+                      borderBottom: "1px solid #f0f3f7",
+                      background: "rgba(99,91,255,0.03)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        color: "#635BFF",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      Load from Consolidation
+                    </div>
+                    <select
+                      style={{
+                        width: "100%",
+                        fontSize: "11px",
+                        padding: "6px 8px",
+                        borderRadius: "6px",
+                        border: "1px solid #e3e8ee",
+                        background: "#fff",
+                        color: "#1a1f36",
+                      }}
+                      value={selectedClusterIdx ?? ""}
+                      onChange={(e) => {
+                        const idx =
+                          e.target.value === ""
+                            ? null
+                            : parseInt(e.target.value);
+                        setSelectedClusterIdx(idx);
+                        if (idx !== null && clusters[idx]) {
+                          const cluster = clusters[idx];
+                          // Load shipment IDs from cluster and fetch their details
+                          const shipmentIds = cluster.shipment_ids || [];
+                          if (shipmentIds.length > 0) {
+                            getShipments()
+                              .then((allShipments: any[]) => {
+                                if (!allShipments) return;
+                                const clusterShipments = allShipments.filter(
+                                  (s: any) => shipmentIds.includes(s.id),
+                                );
+                                const items = clusterShipments.map(
+                                  (s: any, i: number) => ({
+                                    id: s.id,
+                                    label:
+                                      s.shipment_code ||
+                                      `SHIP-${s.id.substring(0, 6)}`,
+                                    lengthCm: s.length_cm || 100,
+                                    widthCm: s.width_cm || 80,
+                                    heightCm: s.height_cm || 60,
+                                    weightKg: s.weight_kg || 500,
+                                    quantity: 1,
+                                    color: COLORS[i % COLORS.length],
+                                    stackable: true,
+                                    keepUpright: s.cargo_type === "fragile",
+                                    doNotRotate: false,
+                                    cargoType: s.cargo_type || "general",
+                                    priority: s.priority || "normal",
+                                  }),
+                                );
+                                setCargoItems(items);
+                                // Also try to match vehicle
+                                if (cluster.vehicle_id) {
+                                  const vIdx = vehicles.findIndex(
+                                    (v) => v.id === cluster.vehicle_id,
+                                  );
+                                  if (vIdx >= 0) setSelectedVehicleIdx(vIdx);
+                                }
+                              })
+                              .catch(() => {});
+                          }
+                        }
+                      }}
+                    >
+                      <option value="">Select a cluster...</option>
+                      {clusters.map((c: any, idx: number) => (
+                        <option key={c.id} value={idx}>
+                          Cluster {idx + 1} — {(c.shipment_ids || []).length}{" "}
+                          shipments · {Math.round(c.utilization_pct || 0)}% util
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div
                   style={{
-                    padding: '8px 12px',
-                    display: 'flex',
+                    padding: "8px 12px",
+                    display: "flex",
                     gap: 4,
-                    flexWrap: 'wrap',
-                    borderBottom: '1px solid #f0f3f7',
+                    flexWrap: "wrap",
+                    borderBottom: "1px solid #f0f3f7",
                   }}
                 >
                   <button
                     onClick={() => setShowAddModal(true)}
-                    style={sideBtnStyle('#635BFF')}
+                    style={sideBtnStyle("#635BFF")}
                   >
                     <Plus size={10} /> ADD
                   </button>
-                  <button
-                    onClick={randomize}
-                    style={sideBtnStyle('#0ea5e9')}
-                  >
+                  <button onClick={randomize} style={sideBtnStyle("#0ea5e9")}>
                     <Shuffle size={10} /> RANDOM
                   </button>
-                  <button
-                    onClick={importJSON}
-                    style={sideBtnStyle('#10b981')}
-                  >
+                  <button onClick={importJSON} style={sideBtnStyle("#10b981")}>
                     <Upload size={10} /> IMPORT
                   </button>
-                  <button
-                    onClick={exportJSON}
-                    style={sideBtnStyle('#f59e0b')}
-                  >
+                  <button onClick={exportJSON} style={sideBtnStyle("#f59e0b")}>
                     <Download size={10} /> EXPORT
                   </button>
                 </div>
                 <div
                   style={{
-                    padding: '6px 12px',
-                    display: 'flex',
+                    padding: "6px 12px",
+                    display: "flex",
                     gap: 4,
-                    alignItems: 'center',
-                    borderBottom: '1px solid #f0f3f7',
+                    alignItems: "center",
+                    borderBottom: "1px solid #f0f3f7",
                   }}
                 >
-                  <Search size={12} style={{ color: '#8792a2' }} />
+                  <Search size={12} style={{ color: "#8792a2" }} />
                   <input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search items..."
                     style={{
                       flex: 1,
-                      border: 'none',
-                      outline: 'none',
+                      border: "none",
+                      outline: "none",
                       fontSize: 11,
-                      color: '#0a2540',
-                      background: 'transparent',
+                      color: "#0a2540",
+                      background: "transparent",
                     }}
                   />
                   <button
@@ -1363,17 +1516,17 @@ export default function PackingPage() {
                 {(packingData?.unpacked_items?.length || 0) > 0 && (
                   <div
                     style={{
-                      margin: '6px 12px',
-                      background: '#fef2f2',
-                      border: '1px solid #fecaca',
+                      margin: "6px 12px",
+                      background: "#fef2f2",
+                      border: "1px solid #fecaca",
                       borderRadius: 6,
-                      padding: '6px 10px',
+                      padding: "6px 10px",
                       fontSize: 10,
-                      color: '#dc2626',
+                      color: "#dc2626",
                     }}
                   >
                     ⚠ {packingData!.unpacked_items.length} item
-                    {packingData!.unpacked_items.length > 1 ? 's' : ''}{' '}
+                    {packingData!.unpacked_items.length > 1 ? "s" : ""}{" "}
                     don&apos;t fit! Try a larger vehicle.
                   </div>
                 )}
@@ -1394,18 +1547,18 @@ export default function PackingPage() {
                         onMouseEnter={() => setHoveredItem(item.id)}
                         onMouseLeave={() => setHoveredItem(null)}
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
+                          display: "flex",
+                          alignItems: "center",
                           gap: 7,
-                          padding: '7px 12px',
-                          borderBottom: '1px solid #f5f7fa',
-                          cursor: 'pointer',
-                          transition: 'background .1s',
+                          padding: "7px 12px",
+                          borderBottom: "1px solid #f5f7fa",
+                          cursor: "pointer",
+                          transition: "background .1s",
                           background: isSel
-                            ? '#f0f3ff'
+                            ? "#f0f3ff"
                             : hoveredItem === item.id
-                              ? '#fafbfc'
-                              : 'transparent',
+                              ? "#fafbfc"
+                              : "transparent",
                         }}
                       >
                         <div
@@ -1422,16 +1575,16 @@ export default function PackingPage() {
                             style={{
                               fontSize: 11,
                               fontWeight: 600,
-                              display: 'flex',
-                              alignItems: 'center',
-                              flexWrap: 'wrap',
+                              display: "flex",
+                              alignItems: "center",
+                              flexWrap: "wrap",
                             }}
                           >
                             {item.label}
                             {item.quantity > 1 && (
                               <span
                                 style={{
-                                  color: '#635BFF',
+                                  color: "#635BFF",
                                   fontSize: 9,
                                   marginLeft: 3,
                                 }}
@@ -1455,28 +1608,26 @@ export default function PackingPage() {
                               active={item.doNotRotate}
                             />
                           </div>
-                          <div
-                            style={{ fontSize: 9, color: '#8792a2' }}
-                          >
-                            {item.lengthCm}×{item.widthCm}×
-                            {item.heightCm}cm · {item.weightKg}kg
-                            {item.cargoType !== 'general' &&
+                          <div style={{ fontSize: 9, color: "#8792a2" }}>
+                            {item.lengthCm}×{item.widthCm}×{item.heightCm}cm ·{" "}
+                            {item.weightKg}kg
+                            {item.cargoType !== "general" &&
                               ` · ${item.cargoType}`}
                           </div>
                         </div>
                         <div
                           style={{
                             fontSize: 8,
-                            padding: '2px 5px',
+                            padding: "2px 5px",
                             borderRadius: 3,
                             background: isPlaced
-                              ? 'rgba(16,185,129,.12)'
-                              : 'rgba(239,68,68,.12)',
-                            color: isPlaced ? '#10b981' : '#ef4444',
+                              ? "rgba(16,185,129,.12)"
+                              : "rgba(239,68,68,.12)",
+                            color: isPlaced ? "#10b981" : "#ef4444",
                             fontWeight: 700,
                           }}
                         >
-                          {isPlaced ? 'OK' : 'NO FIT'}
+                          {isPlaced ? "OK" : "NO FIT"}
                         </div>
                         <input
                           type="number"
@@ -1489,11 +1640,11 @@ export default function PackingPage() {
                           max={99}
                           style={{
                             width: 30,
-                            padding: '1px 3px',
+                            padding: "1px 3px",
                             borderRadius: 4,
-                            border: '1px solid #e3e8ee',
+                            border: "1px solid #e3e8ee",
                             fontSize: 10,
-                            textAlign: 'center',
+                            textAlign: "center",
                             fontWeight: 600,
                           }}
                         />
@@ -1503,11 +1654,11 @@ export default function PackingPage() {
                             handleDuplicateItem(item.id);
                           }}
                           style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
                             padding: 1,
-                            color: '#8792a2',
+                            color: "#8792a2",
                           }}
                         >
                           <Copy size={10} />
@@ -1518,11 +1669,11 @@ export default function PackingPage() {
                             handleDeleteItem(item.id);
                           }}
                           style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
                             padding: 1,
-                            color: '#ef4444',
+                            color: "#ef4444",
                           }}
                         >
                           <Trash2 size={10} />
@@ -1534,8 +1685,8 @@ export default function PackingPage() {
                     <div
                       style={{
                         padding: 24,
-                        textAlign: 'center',
-                        color: '#8792a2',
+                        textAlign: "center",
+                        color: "#8792a2",
                         fontSize: 11,
                       }}
                     >
@@ -1549,44 +1700,38 @@ export default function PackingPage() {
                   cargoItems.find((i) => i.id === selectedItem) && (
                     <div
                       style={{
-                        padding: '8px 12px',
-                        borderTop: '1px solid #f0f3f7',
-                        display: 'flex',
+                        padding: "8px 12px",
+                        borderTop: "1px solid #f0f3f7",
+                        display: "flex",
                         gap: 6,
-                        flexWrap: 'wrap',
+                        flexWrap: "wrap",
                       }}
                     >
                       <span
                         style={{
                           fontSize: 9,
-                          color: '#8792a2',
+                          color: "#8792a2",
                           fontWeight: 600,
-                          textTransform: 'uppercase',
-                          width: '100%',
+                          textTransform: "uppercase",
+                          width: "100%",
                           marginBottom: 2,
                         }}
                       >
                         Constraints
                       </span>
                       {(
-                        [
-                          'stackable',
-                          'keepUpright',
-                          'doNotRotate',
-                        ] as const
+                        ["stackable", "keepUpright", "doNotRotate"] as const
                       ).map((field) => {
                         const item = cargoItems.find(
                           (i) => i.id === selectedItem,
                         )!;
                         const labels = {
-                          stackable: 'Stackable',
-                          keepUpright: 'Keep Upright',
-                          doNotRotate: 'No Rotate',
+                          stackable: "Stackable",
+                          keepUpright: "Keep Upright",
+                          doNotRotate: "No Rotate",
                         };
                         const val =
-                          field === 'stackable'
-                            ? item.stackable
-                            : item[field];
+                          field === "stackable" ? item.stackable : item[field];
                         return (
                           <button
                             key={field}
@@ -1594,15 +1739,15 @@ export default function PackingPage() {
                               handleToggleConstraint(selectedItem, field)
                             }
                             style={{
-                              padding: '3px 8px',
+                              padding: "3px 8px",
                               borderRadius: 5,
                               fontSize: 10,
                               fontWeight: 600,
-                              border: '1px solid',
-                              cursor: 'pointer',
-                              background: val ? '#ede9ff' : '#fff',
-                              color: val ? '#635BFF' : '#8792a2',
-                              borderColor: val ? '#c4b5fd' : '#e3e8ee',
+                              border: "1px solid",
+                              cursor: "pointer",
+                              background: val ? "#ede9ff" : "#fff",
+                              color: val ? "#635BFF" : "#8792a2",
+                              borderColor: val ? "#c4b5fd" : "#e3e8ee",
                             }}
                           >
                             {labels[field]}
@@ -1615,40 +1760,40 @@ export default function PackingPage() {
             )}
 
             {/* ────── CONTAINER TAB ────── */}
-            {activeTab === 'container' && (
+            {activeTab === "container" && (
               <div
                 style={{
                   padding: 14,
-                  display: 'flex',
-                  flexDirection: 'column',
+                  display: "flex",
+                  flexDirection: "column",
                   gap: 12,
                 }}
               >
                 <div
-                  style={{ fontSize: 12, fontWeight: 600, color: '#0a2540' }}
+                  style={{ fontSize: 12, fontWeight: 600, color: "#0a2540" }}
                 >
-                  {vehicle.name}{' '}
+                  {vehicle.name}{" "}
                   {vehicle.type && (
-                    <span style={{ color: '#8792a2', fontWeight: 400 }}>
+                    <span style={{ color: "#8792a2", fontWeight: 400 }}>
                       ({vehicle.type})
                     </span>
                   )}
                 </div>
                 <div
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
                     gap: 8,
                   }}
                 >
                   {(
                     [
-                      { label: 'Length (cm)', key: 'lengthCm' as const },
-                      { label: 'Width (cm)', key: 'widthCm' as const },
-                      { label: 'Height (cm)', key: 'heightCm' as const },
+                      { label: "Length (cm)", key: "lengthCm" as const },
+                      { label: "Width (cm)", key: "widthCm" as const },
+                      { label: "Height (cm)", key: "heightCm" as const },
                       {
-                        label: 'Max Weight (kg)',
-                        key: 'maxWeightKg' as const,
+                        label: "Max Weight (kg)",
+                        key: "maxWeightKg" as const,
                       },
                     ] as const
                   ).map((f) => (
@@ -1656,11 +1801,11 @@ export default function PackingPage() {
                       <label
                         style={{
                           fontSize: 9,
-                          color: '#8792a2',
-                          display: 'block',
+                          color: "#8792a2",
+                          display: "block",
                           marginBottom: 2,
                           fontWeight: 600,
-                          textTransform: 'uppercase',
+                          textTransform: "uppercase",
                         }}
                       >
                         {f.label}
@@ -1675,14 +1820,14 @@ export default function PackingPage() {
                           }))
                         }
                         style={{
-                          width: '100%',
-                          padding: '6px 8px',
+                          width: "100%",
+                          padding: "6px 8px",
                           borderRadius: 6,
-                          border: '1px solid #e3e8ee',
+                          border: "1px solid #e3e8ee",
                           fontSize: 12,
                           fontWeight: 600,
-                          color: '#0a2540',
-                          background: '#fafbfc',
+                          color: "#0a2540",
+                          background: "#fafbfc",
                         }}
                       />
                     </div>
@@ -1691,22 +1836,22 @@ export default function PackingPage() {
                 <div
                   style={{
                     padding: 10,
-                    background: '#f8f9fc',
+                    background: "#f8f9fc",
                     borderRadius: 6,
                   }}
                 >
                   {(
                     [
                       [
-                        'Volume',
+                        "Volume",
                         `${((customDims.lengthCm * customDims.widthCm * customDims.heightCm) / 1e6).toFixed(2)} m³`,
                       ],
                       [
-                        'Max load',
+                        "Max load",
                         `${customDims.maxWeightKg.toLocaleString()} kg`,
                       ],
                       [
-                        'Door opening',
+                        "Door opening",
                         `${customDims.widthCm}×${customDims.heightCm} cm`,
                       ],
                     ] as [string, string][]
@@ -1714,13 +1859,13 @@ export default function PackingPage() {
                     <div
                       key={k}
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
+                        display: "flex",
+                        justifyContent: "space-between",
                         fontSize: 11,
                         marginBottom: 3,
                       }}
                     >
-                      <span style={{ color: '#8792a2' }}>{k}</span>
+                      <span style={{ color: "#8792a2" }}>{k}</span>
                       <span style={{ fontWeight: 600 }}>{v}</span>
                     </div>
                   ))}
@@ -1728,15 +1873,15 @@ export default function PackingPage() {
                 <button
                   onClick={handleRecalculate}
                   style={{
-                    width: '100%',
-                    padding: '9px',
+                    width: "100%",
+                    padding: "9px",
                     borderRadius: 7,
                     fontSize: 12,
                     fontWeight: 600,
-                    background: '#635BFF',
-                    color: '#fff',
-                    border: 'none',
-                    cursor: 'pointer',
+                    background: "#635BFF",
+                    color: "#fff",
+                    border: "none",
+                    cursor: "pointer",
                   }}
                 >
                   Recalculate Custom Dims
@@ -1744,50 +1889,50 @@ export default function PackingPage() {
                 <button
                   onClick={autoSelectBest}
                   style={{
-                    width: '100%',
-                    padding: '9px',
+                    width: "100%",
+                    padding: "9px",
                     borderRadius: 7,
                     fontSize: 12,
                     fontWeight: 600,
-                    background: '#10b981',
-                    color: '#fff',
-                    border: 'none',
-                    cursor: 'pointer',
+                    background: "#10b981",
+                    color: "#fff",
+                    border: "none",
+                    cursor: "pointer",
                   }}
                 >
                   <Zap
                     size={12}
                     style={{ marginRight: 4, verticalAlign: -1 }}
-                  />{' '}
+                  />{" "}
                   Auto-Select Best Vehicle
                 </button>
               </div>
             )}
 
             {/* ────── REPORT TAB ────── */}
-            {activeTab === 'report' && (
+            {activeTab === "report" && (
               <>
                 <div
                   style={{
-                    padding: '10px 12px',
-                    borderBottom: '1px solid #f0f3f7',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
+                    padding: "10px 12px",
+                    borderBottom: "1px solid #f0f3f7",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
                   }}
                 >
                   <span
                     style={{
                       fontSize: 11,
                       fontWeight: 600,
-                      color: '#0a2540',
+                      color: "#0a2540",
                     }}
                   >
                     Step-by-Step Loading Plan
                   </span>
                   <button
                     onClick={() => window.print()}
-                    style={sideBtnStyle('#425466')}
+                    style={sideBtnStyle("#425466")}
                   >
                     <Printer size={9} /> Print
                   </button>
@@ -1798,30 +1943,30 @@ export default function PackingPage() {
                       key={i}
                       onClick={() => setSelectedItem(s.item_id)}
                       style={{
-                        display: 'flex',
+                        display: "flex",
                         gap: 10,
-                        padding: '9px 12px',
-                        borderBottom: '1px solid #f5f7fa',
-                        cursor: 'pointer',
-                        transition: 'background .1s',
+                        padding: "9px 12px",
+                        borderBottom: "1px solid #f5f7fa",
+                        cursor: "pointer",
+                        transition: "background .1s",
                         background:
                           selectedItem === s.item_id
-                            ? '#f0f3ff'
-                            : 'transparent',
+                            ? "#f0f3ff"
+                            : "transparent",
                       }}
                     >
                       <div
                         style={{
                           width: 24,
                           height: 24,
-                          borderRadius: '50%',
-                          background: s.color || '#635BFF',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
+                          borderRadius: "50%",
+                          background: s.color || "#635BFF",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
                           fontSize: 10,
                           fontWeight: 700,
-                          color: '#fff',
+                          color: "#fff",
                           flexShrink: 0,
                         }}
                       >
@@ -1832,7 +1977,7 @@ export default function PackingPage() {
                           style={{
                             fontSize: 11.5,
                             fontWeight: 600,
-                            color: '#0a2540',
+                            color: "#0a2540",
                           }}
                         >
                           Place {s.item_label}
@@ -1840,20 +1985,19 @@ export default function PackingPage() {
                         <div
                           style={{
                             fontSize: 9.5,
-                            color: '#8792a2',
+                            color: "#8792a2",
                             marginTop: 1,
                           }}
                         >
-                          at ({s.position.x.toFixed(0)},{' '}
-                          {s.position.y.toFixed(0)},{' '}
-                          {s.position.z.toFixed(0)}) ·{' '}
-                          {s.oriented_dims[0]}×{s.oriented_dims[1]}×
+                          at ({s.position.x.toFixed(0)},{" "}
+                          {s.position.y.toFixed(0)}, {s.position.z.toFixed(0)})
+                          · {s.oriented_dims[0]}×{s.oriented_dims[1]}×
                           {s.oriented_dims[2]} cm
                         </div>
                         <div
                           style={{
                             fontSize: 9,
-                            color: '#10b981',
+                            color: "#10b981",
                             fontWeight: 500,
                             marginTop: 1,
                           }}
@@ -1863,13 +2007,12 @@ export default function PackingPage() {
                       </div>
                     </div>
                   ))}
-                  {(!packingData?.steps ||
-                    packingData.steps.length === 0) && (
+                  {(!packingData?.steps || packingData.steps.length === 0) && (
                     <div
                       style={{
                         padding: 24,
-                        textAlign: 'center',
-                        color: '#8792a2',
+                        textAlign: "center",
+                        color: "#8792a2",
                         fontSize: 11,
                       }}
                     >
@@ -1881,19 +2024,19 @@ export default function PackingPage() {
             )}
 
             {/* ────── WEIGHT TAB ────── */}
-            {activeTab === 'weight' && (
+            {activeTab === "weight" && (
               <div
                 style={{
                   padding: 14,
-                  display: 'flex',
-                  flexDirection: 'column',
+                  display: "flex",
+                  flexDirection: "column",
                   gap: 14,
                 }}
               >
                 <div
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-around',
+                    display: "flex",
+                    justifyContent: "space-around",
                   }}
                 >
                   <UtilRing
@@ -1913,32 +2056,32 @@ export default function PackingPage() {
                     style={{
                       fontSize: 9,
                       fontWeight: 650,
-                      color: '#0a2540',
+                      color: "#0a2540",
                       marginBottom: 5,
-                      textTransform: 'uppercase',
-                      letterSpacing: '.04em',
+                      textTransform: "uppercase",
+                      letterSpacing: ".04em",
                     }}
                   >
                     Weight Distribution (Front ↔ Rear)
                   </div>
                   <div
                     style={{
-                      display: 'flex',
+                      display: "flex",
                       height: 20,
                       borderRadius: 5,
-                      overflow: 'hidden',
-                      background: '#f0f3f7',
+                      overflow: "hidden",
+                      background: "#f0f3f7",
                     }}
                   >
                     <div
                       style={{
                         width: `${weightDist.rear}%`,
-                        background: '#635BFF',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
+                        background: "#635BFF",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                         fontSize: 9,
-                        color: '#fff',
+                        color: "#fff",
                         fontWeight: 600,
                         minWidth: 28,
                       }}
@@ -1948,12 +2091,12 @@ export default function PackingPage() {
                     <div
                       style={{
                         width: `${weightDist.front}%`,
-                        background: '#0ea5e9',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
+                        background: "#0ea5e9",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                         fontSize: 9,
-                        color: '#fff',
+                        color: "#fff",
                         fontWeight: 600,
                         minWidth: 28,
                       }}
@@ -1963,10 +2106,10 @@ export default function PackingPage() {
                   </div>
                   <div
                     style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
+                      display: "flex",
+                      justifyContent: "space-between",
                       fontSize: 9,
-                      color: '#8792a2',
+                      color: "#8792a2",
                       marginTop: 2,
                     }}
                   >
@@ -1978,7 +2121,7 @@ export default function PackingPage() {
                 <div
                   style={{
                     padding: 10,
-                    background: '#f8f9fc',
+                    background: "#f8f9fc",
                     borderRadius: 6,
                   }}
                 >
@@ -1986,31 +2129,29 @@ export default function PackingPage() {
                     style={{
                       fontSize: 9,
                       fontWeight: 650,
-                      color: '#0a2540',
+                      color: "#0a2540",
                       marginBottom: 6,
-                      textTransform: 'uppercase',
+                      textTransform: "uppercase",
                     }}
                   >
                     Center of Gravity
                   </div>
                   <div
                     style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, 1fr)",
                       gap: 6,
                     }}
                   >
                     {(
                       [
-                        ['X', m?.center_of_gravity.x],
-                        ['Y', m?.center_of_gravity.y],
-                        ['Z', m?.center_of_gravity.z],
+                        ["X", m?.center_of_gravity.x],
+                        ["Y", m?.center_of_gravity.y],
+                        ["Z", m?.center_of_gravity.z],
                       ] as [string, number | undefined][]
                     ).map(([k, v]) => (
                       <div key={k}>
-                        <div style={{ fontSize: 8, color: '#8792a2' }}>
-                          {k}
-                        </div>
+                        <div style={{ fontSize: 8, color: "#8792a2" }}>{k}</div>
                         <div style={{ fontSize: 12, fontWeight: 700 }}>
                           {(v || 0).toFixed(0)} cm
                         </div>
@@ -2022,55 +2163,52 @@ export default function PackingPage() {
                 <div>
                   {[
                     {
-                      k: 'Total Weight',
+                      k: "Total Weight",
                       v: `${(m?.total_weight_kg || 0).toLocaleString()} kg`,
                     },
                     {
-                      k: 'Max Capacity',
+                      k: "Max Capacity",
                       v: `${customDims.maxWeightKg.toLocaleString()} kg`,
                     },
                     {
-                      k: 'Remaining',
+                      k: "Remaining",
                       v: `${Math.max(0, remainingWt).toLocaleString()} kg`,
-                      c: remainingWt < 0 ? '#ef4444' : '#10b981',
+                      c: remainingWt < 0 ? "#ef4444" : "#10b981",
                     },
                     {
-                      k: 'Volume Used',
+                      k: "Volume Used",
                       v: `${(m?.total_volume_m3 || 0).toFixed(2)} m³`,
                     },
-                    { k: 'Free Space', v: `${freeVolM3.toFixed(2)} m³` },
-                    { k: 'Items Packed', v: `${m?.total_items || 0}` },
+                    { k: "Free Space", v: `${freeVolM3.toFixed(2)} m³` },
+                    { k: "Items Packed", v: `${m?.total_items || 0}` },
                     {
-                      k: 'Items Unpacked',
+                      k: "Items Unpacked",
                       v: `${m?.unpacked_count || 0}`,
-                      c:
-                        (m?.unpacked_count || 0) > 0
-                          ? '#ef4444'
-                          : '#10b981',
+                      c: (m?.unpacked_count || 0) > 0 ? "#ef4444" : "#10b981",
                     },
                     {
-                      k: 'Compute Time',
+                      k: "Compute Time",
                       v: `${m?.computation_time_ms || 0} ms`,
                     },
-                    { k: 'Algorithm', v: m?.algorithm || '—' },
+                    { k: "Algorithm", v: m?.algorithm || "—" },
                   ].map((r) => (
                     <div
                       key={r.k}
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        padding: '4px 0',
-                        borderBottom: '1px solid #f0f3f7',
+                        display: "flex",
+                        justifyContent: "space-between",
+                        padding: "4px 0",
+                        borderBottom: "1px solid #f0f3f7",
                         fontSize: 11,
                       }}
                     >
-                      <span style={{ color: '#8792a2' }}>{r.k}</span>
+                      <span style={{ color: "#8792a2" }}>{r.k}</span>
                       <span
                         style={{
                           fontWeight: 600,
                           color:
                             (r as { k: string; v: string; c?: string }).c ||
-                            '#0a2540',
+                            "#0a2540",
                         }}
                       >
                         {r.v}
@@ -2082,12 +2220,12 @@ export default function PackingPage() {
             )}
 
             {/* ────── SETTINGS TAB ────── */}
-            {activeTab === 'settings' && (
+            {activeTab === "settings" && (
               <div
                 style={{
                   padding: 14,
-                  display: 'flex',
-                  flexDirection: 'column',
+                  display: "flex",
+                  flexDirection: "column",
                   gap: 2,
                 }}
               >
@@ -2095,9 +2233,9 @@ export default function PackingPage() {
                   style={{
                     fontSize: 9,
                     fontWeight: 650,
-                    color: '#8792a2',
-                    textTransform: 'uppercase',
-                    letterSpacing: '.05em',
+                    color: "#8792a2",
+                    textTransform: "uppercase",
+                    letterSpacing: ".05em",
                     marginBottom: 4,
                   }}
                 >
@@ -2138,9 +2276,9 @@ export default function PackingPage() {
                   style={{
                     fontSize: 9,
                     fontWeight: 650,
-                    color: '#8792a2',
-                    textTransform: 'uppercase',
-                    letterSpacing: '.05em',
+                    color: "#8792a2",
+                    textTransform: "uppercase",
+                    letterSpacing: ".05em",
                     marginTop: 10,
                     marginBottom: 4,
                   }}
@@ -2167,9 +2305,9 @@ export default function PackingPage() {
                   style={{
                     fontSize: 9,
                     fontWeight: 650,
-                    color: '#8792a2',
-                    textTransform: 'uppercase',
-                    letterSpacing: '.05em',
+                    color: "#8792a2",
+                    textTransform: "uppercase",
+                    letterSpacing: ".05em",
                     marginTop: 10,
                     marginBottom: 4,
                   }}
@@ -2183,14 +2321,14 @@ export default function PackingPage() {
                   step={50}
                   value={animSpeed}
                   onChange={(e) => setAnimSpeed(+e.target.value)}
-                  style={{ width: '100%', accentColor: '#635BFF' }}
+                  style={{ width: "100%", accentColor: "#635BFF" }}
                 />
                 <div
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
+                    display: "flex",
+                    justifyContent: "space-between",
                     fontSize: 9,
-                    color: '#8792a2',
+                    color: "#8792a2",
                   }}
                 >
                   <span>Fast</span>
@@ -2201,16 +2339,16 @@ export default function PackingPage() {
                 <div
                   style={{
                     marginTop: 10,
-                    background: '#f8f9fc',
-                    border: '1px solid #e3e8ee',
+                    background: "#f8f9fc",
+                    border: "1px solid #e3e8ee",
                     borderRadius: 6,
-                    padding: '10px 12px',
+                    padding: "10px 12px",
                     fontSize: 9.5,
                     lineHeight: 1.8,
-                    color: '#425466',
+                    color: "#425466",
                   }}
                 >
-                  <strong style={{ color: '#635BFF' }}>
+                  <strong style={{ color: "#635BFF" }}>
                     Extreme Point Method
                   </strong>
                   <br />
@@ -2230,33 +2368,31 @@ export default function PackingPage() {
                 <div
                   style={{
                     marginTop: 8,
-                    background: '#f8f9fc',
-                    border: '1px solid #e3e8ee',
+                    background: "#f8f9fc",
+                    border: "1px solid #e3e8ee",
                     borderRadius: 6,
-                    padding: '10px 12px',
+                    padding: "10px 12px",
                     fontSize: 9.5,
                     lineHeight: 1.8,
-                    color: '#425466',
+                    color: "#425466",
                   }}
                 >
-                  <strong style={{ color: '#635BFF' }}>
+                  <strong style={{ color: "#635BFF" }}>
                     Keyboard Shortcuts
                   </strong>
                   <br />
-                  <span style={{ color: '#8792a2' }}>R</span> Auto-rotate
-                  &nbsp;
-                  <span style={{ color: '#8792a2' }}>Space</span> Animate
+                  <span style={{ color: "#8792a2" }}>R</span> Auto-rotate &nbsp;
+                  <span style={{ color: "#8792a2" }}>Space</span> Animate
                   <br />
-                  <span style={{ color: '#8792a2' }}>L</span> Labels &nbsp;
-                  <span style={{ color: '#8792a2' }}>G</span> Grid &nbsp;
-                  <span style={{ color: '#8792a2' }}>H</span> Heatmap
+                  <span style={{ color: "#8792a2" }}>L</span> Labels &nbsp;
+                  <span style={{ color: "#8792a2" }}>G</span> Grid &nbsp;
+                  <span style={{ color: "#8792a2" }}>H</span> Heatmap
                   <br />
-                  <span style={{ color: '#8792a2' }}>E</span> Explode &nbsp;
-                  <span style={{ color: '#8792a2' }}>Esc</span> Deselect
+                  <span style={{ color: "#8792a2" }}>E</span> Explode &nbsp;
+                  <span style={{ color: "#8792a2" }}>Esc</span> Deselect
                   <br />
-                  <span style={{ color: '#8792a2' }}>Ctrl+Z</span> Undo
-                  &nbsp;
-                  <span style={{ color: '#8792a2' }}>Ctrl+Y</span> Redo
+                  <span style={{ color: "#8792a2" }}>Ctrl+Z</span> Undo &nbsp;
+                  <span style={{ color: "#8792a2" }}>Ctrl+Y</span> Redo
                 </div>
               </div>
             )}
@@ -2265,23 +2401,23 @@ export default function PackingPage() {
           {/* Bottom pack button */}
           <div
             style={{
-              padding: '10px 12px',
-              borderTop: '1px solid #e3e8ee',
+              padding: "10px 12px",
+              borderTop: "1px solid #e3e8ee",
               flexShrink: 0,
             }}
           >
             <button
               onClick={handleRecalculate}
               style={{
-                width: '100%',
-                padding: '10px',
+                width: "100%",
+                padding: "10px",
                 fontSize: 12,
                 fontWeight: 700,
-                background: 'linear-gradient(135deg, #635BFF, #10b981)',
-                border: 'none',
+                background: "linear-gradient(135deg, #635BFF, #10b981)",
+                border: "none",
                 borderRadius: 7,
-                color: '#fff',
-                cursor: 'pointer',
+                color: "#fff",
+                cursor: "pointer",
                 letterSpacing: 1,
               }}
             >
@@ -2320,16 +2456,16 @@ function Btn({
     <button
       onClick={onClick}
       style={{
-        padding: '5px 10px',
+        padding: "5px 10px",
         fontSize: 9.5,
         fontWeight: active ? 700 : 500,
-        background: active ? accent + '15' : '#fff',
-        border: `1px solid ${active ? accent : '#e3e8ee'}`,
-        color: active ? accent : '#425466',
+        background: active ? accent + "15" : "#fff",
+        border: `1px solid ${active ? accent : "#e3e8ee"}`,
+        color: active ? accent : "#425466",
         borderRadius: 6,
-        cursor: 'pointer',
-        letterSpacing: '.5px',
-        transition: 'all .15s',
+        cursor: "pointer",
+        letterSpacing: ".5px",
+        transition: "all .15s",
       }}
     >
       {label}
@@ -2338,31 +2474,31 @@ function Btn({
 }
 
 const iconBtnStyle: React.CSSProperties = {
-  background: 'none',
-  border: '1px solid #e3e8ee',
+  background: "none",
+  border: "1px solid #e3e8ee",
   borderRadius: 6,
-  padding: '4px 6px',
-  cursor: 'pointer',
-  color: '#8792a2',
-  display: 'flex',
-  alignItems: 'center',
+  padding: "4px 6px",
+  cursor: "pointer",
+  color: "#8792a2",
+  display: "flex",
+  alignItems: "center",
 };
 
 function sideBtnStyle(accent: string): React.CSSProperties {
   return {
     flex: 1,
-    padding: '5px 0',
+    padding: "5px 0",
     fontSize: 9,
     fontWeight: 600,
-    background: accent + '10',
+    background: accent + "10",
     border: `1px solid ${accent}33`,
     color: accent,
     borderRadius: 5,
-    cursor: 'pointer',
-    letterSpacing: '.5px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    cursor: "pointer",
+    letterSpacing: ".5px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 3,
   };
 }
@@ -2374,10 +2510,10 @@ function AddItemModal({
   onAdd,
   onClose,
 }: {
-  onAdd: (item: Omit<CargoItem, 'id' | 'color'>) => void;
+  onAdd: (item: Omit<CargoItem, "id" | "color">) => void;
   onClose: () => void;
 }) {
-  const [label, setLabel] = useState('');
+  const [label, setLabel] = useState("");
   const [lengthCm, setLengthCm] = useState(100);
   const [widthCm, setWidthCm] = useState(80);
   const [heightCm, setHeightCm] = useState(60);
@@ -2386,8 +2522,8 @@ function AddItemModal({
   const [stackable, setStackable] = useState(true);
   const [keepUpright, setKeepUpright] = useState(false);
   const [doNotRotate, setDoNotRotate] = useState(false);
-  const [cargoType, setCargoType] = useState('general');
-  const [priority, setPriority] = useState('normal');
+  const [cargoType, setCargoType] = useState("general");
+  const [priority, setPriority] = useState("normal");
 
   const submit = () => {
     if (!label.trim()) return;
@@ -2407,34 +2543,34 @@ function AddItemModal({
   };
 
   const iS: React.CSSProperties = {
-    width: '100%',
-    padding: '7px 9px',
+    width: "100%",
+    padding: "7px 9px",
     borderRadius: 7,
-    border: '1px solid #e3e8ee',
+    border: "1px solid #e3e8ee",
     fontSize: 12.5,
     fontWeight: 500,
-    color: '#0a2540',
-    background: '#fafbfc',
+    color: "#0a2540",
+    background: "#fafbfc",
   };
   const lS: React.CSSProperties = {
     fontSize: 9,
-    color: '#8792a2',
-    display: 'block',
+    color: "#8792a2",
+    display: "block",
     marginBottom: 2,
     fontWeight: 600,
-    textTransform: 'uppercase',
-    letterSpacing: '.04em',
+    textTransform: "uppercase",
+    letterSpacing: ".04em",
   };
 
   return (
     <div
       style={{
-        position: 'fixed',
+        position: "fixed",
         inset: 0,
-        background: 'rgba(0,0,0,.35)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        background: "rgba(0,0,0,.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         zIndex: 1000,
       }}
       onClick={onClose}
@@ -2442,35 +2578,33 @@ function AddItemModal({
       <div
         style={{
           width: 400,
-          maxHeight: '85vh',
-          overflow: 'auto',
-          background: '#fff',
+          maxHeight: "85vh",
+          overflow: "auto",
+          background: "#fff",
           borderRadius: 12,
-          boxShadow: '0 16px 48px rgba(0,0,0,.18)',
+          boxShadow: "0 16px 48px rgba(0,0,0,.18)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
           style={{
-            padding: '14px 18px',
-            borderBottom: '1px solid #f0f3f7',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            padding: "14px 18px",
+            borderBottom: "1px solid #f0f3f7",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
           }}
         >
-          <div
-            style={{ fontSize: 14, fontWeight: 700, color: '#0a2540' }}
-          >
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#0a2540" }}>
             Add Cargo Item
           </div>
           <button
             onClick={onClose}
             style={{
-              cursor: 'pointer',
-              background: 'none',
-              border: 'none',
-              color: '#8792a2',
+              cursor: "pointer",
+              background: "none",
+              border: "none",
+              color: "#8792a2",
             }}
           >
             <X size={16} />
@@ -2478,9 +2612,9 @@ function AddItemModal({
         </div>
         <div
           style={{
-            padding: '16px 18px',
-            display: 'flex',
-            flexDirection: 'column',
+            padding: "16px 18px",
+            display: "flex",
+            flexDirection: "column",
             gap: 12,
           }}
         >
@@ -2496,8 +2630,8 @@ function AddItemModal({
           </div>
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
               gap: 8,
             }}
           >
@@ -2534,8 +2668,8 @@ function AddItemModal({
           </div>
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
               gap: 8,
             }}
           >
@@ -2563,8 +2697,8 @@ function AddItemModal({
           </div>
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
               gap: 8,
             }}
           >
@@ -2573,7 +2707,7 @@ function AddItemModal({
               <select
                 value={cargoType}
                 onChange={(e) => setCargoType(e.target.value)}
-                style={{ ...iS, cursor: 'pointer' }}
+                style={{ ...iS, cursor: "pointer" }}
               >
                 <option value="general">General</option>
                 <option value="fragile">Fragile</option>
@@ -2586,7 +2720,7 @@ function AddItemModal({
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value)}
-                style={{ ...iS, cursor: 'pointer' }}
+                style={{ ...iS, cursor: "pointer" }}
               >
                 <option value="normal">Normal</option>
                 <option value="express">Express</option>
@@ -2596,20 +2730,20 @@ function AddItemModal({
           </div>
           <div>
             <label style={{ ...lS, marginBottom: 6 }}>Constraints</label>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: "flex", gap: 6 }}>
               {[
                 {
-                  l: 'Stackable',
+                  l: "Stackable",
                   v: stackable,
                   s: setStackable,
                 },
                 {
-                  l: 'Keep Upright',
+                  l: "Keep Upright",
                   v: keepUpright,
                   s: setKeepUpright,
                 },
                 {
-                  l: 'No Rotate',
+                  l: "No Rotate",
                   v: doNotRotate,
                   s: setDoNotRotate,
                 },
@@ -2619,15 +2753,15 @@ function AddItemModal({
                   onClick={() => c.s(!c.v)}
                   style={{
                     flex: 1,
-                    padding: '7px 0',
+                    padding: "7px 0",
                     borderRadius: 7,
                     fontSize: 10.5,
                     fontWeight: 600,
-                    border: '1px solid',
-                    cursor: 'pointer',
-                    background: c.v ? '#ede9ff' : '#fff',
-                    color: c.v ? '#635BFF' : '#8792a2',
-                    borderColor: c.v ? '#c4b5fd' : '#e3e8ee',
+                    border: "1px solid",
+                    cursor: "pointer",
+                    background: c.v ? "#ede9ff" : "#fff",
+                    color: c.v ? "#635BFF" : "#8792a2",
+                    borderColor: c.v ? "#c4b5fd" : "#e3e8ee",
                   }}
                 >
                   {c.l}
@@ -2638,40 +2772,40 @@ function AddItemModal({
           <div
             style={{
               padding: 8,
-              background: '#f8f9fc',
+              background: "#f8f9fc",
               borderRadius: 6,
-              display: 'flex',
-              justifyContent: 'space-between',
+              display: "flex",
+              justifyContent: "space-between",
               fontSize: 11,
             }}
           >
-            <span style={{ color: '#8792a2' }}>Volume</span>
+            <span style={{ color: "#8792a2" }}>Volume</span>
             <span style={{ fontWeight: 600 }}>
-              {((lengthCm * widthCm * heightCm) / 1e6).toFixed(4)} m³ ×{' '}
+              {((lengthCm * widthCm * heightCm) / 1e6).toFixed(4)} m³ ×{" "}
               {quantity}
             </span>
           </div>
         </div>
         <div
           style={{
-            padding: '10px 18px 14px',
-            display: 'flex',
+            padding: "10px 18px 14px",
+            display: "flex",
             gap: 8,
-            justifyContent: 'flex-end',
-            borderTop: '1px solid #f0f3f7',
+            justifyContent: "flex-end",
+            borderTop: "1px solid #f0f3f7",
           }}
         >
           <button
             onClick={onClose}
             style={{
-              padding: '7px 18px',
+              padding: "7px 18px",
               borderRadius: 7,
               fontSize: 12,
               fontWeight: 600,
-              background: '#fff',
-              color: '#425466',
-              border: '1px solid #e3e8ee',
-              cursor: 'pointer',
+              background: "#fff",
+              color: "#425466",
+              border: "1px solid #e3e8ee",
+              cursor: "pointer",
             }}
           >
             Cancel
@@ -2680,18 +2814,17 @@ function AddItemModal({
             onClick={submit}
             disabled={!label.trim()}
             style={{
-              padding: '7px 22px',
+              padding: "7px 22px",
               borderRadius: 7,
               fontSize: 12,
               fontWeight: 600,
-              background: label.trim() ? '#635BFF' : '#c4b5fd',
-              color: '#fff',
-              border: 'none',
-              cursor: label.trim() ? 'pointer' : 'not-allowed',
+              background: label.trim() ? "#635BFF" : "#c4b5fd",
+              color: "#fff",
+              border: "none",
+              cursor: label.trim() ? "pointer" : "not-allowed",
             }}
           >
-            <Plus size={13} style={{ marginRight: 3, verticalAlign: -2 }} />{' '}
-            Add
+            <Plus size={13} style={{ marginRight: 3, verticalAlign: -2 }} /> Add
           </button>
         </div>
       </div>

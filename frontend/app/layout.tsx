@@ -1,13 +1,6 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/ui/Sidebar";
-
-const inter = Inter({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800"],
-});
 
 export const metadata: Metadata = {
   title: "LORRI — AI Load Consolidation Optimization Engine",
@@ -30,7 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} antialiased`}>
+      <body className="antialiased">
         <div className="app-layout">
           <Sidebar />
           <div className="main-content">{children}</div>
