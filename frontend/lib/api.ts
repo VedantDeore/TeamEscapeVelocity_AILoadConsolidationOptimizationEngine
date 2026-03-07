@@ -104,6 +104,16 @@ export async function submitClusterFeedback(
   });
 }
 
+export async function editCluster(
+  clusterId: string,
+  data: { remove_shipment_ids?: string[]; vehicle_id?: string },
+) {
+  return fetchApi<any>(`/api/clusters/${clusterId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 // ---- Routes ----
 
 export async function getRoutes() {
