@@ -148,6 +148,7 @@ export default function ConsolidationPage() {
 
   const handleClusterAction = (clusterId: string, action: string) => {
     setClusterStatuses((prev) => ({ ...prev, [clusterId]: action }));
+    submitClusterFeedback(clusterId, action).catch(() => {});
   };
 
   const getUtilColor = (pct: number) => {

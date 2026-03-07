@@ -53,11 +53,11 @@ export default function ReportsPage() {
         if (data?.length) {
           const mapped = data.map((r: any) => ({
             id: r.id,
-            title: r.title,
+            name: r.name || r.title || "Report",
             type: r.type,
             description: r.description,
             icon: r.icon,
-            lastGenerated: r.last_generated,
+            lastGenerated: r.last_generated || r.lastGenerated || "Never",
           }));
           setReports(mapped);
         }
@@ -65,9 +65,15 @@ export default function ReportsPage() {
       .catch(() => {});
   }, []);
 
-  const handleGenerate = (reportId: string) => {
-    setGeneratingId(reportId);
-    setTimeout(() => setGeneratingId(null), 2000);
+  const handleGenerate = (reportType: string) => {
+    setGeneratingId(reportType);
+    const formatMap: Record<string, string> = { pdf: "pdf", csv: "csv", excel: "json" };
+    const fmt = formatMap[selectedFormat] || selectedFormat;
+    window.open(
+      `http://localhost:5000/api/reports/${reportType}/download?format=${fmt}`,
+      "_blank",
+    );
+    setTimeout(() => setGeneratingId(null), 1500);
   };
 
   return (
@@ -109,7 +115,7 @@ export default function ReportsPage() {
             const Icon = iconMap[report.icon] || FileText;
             const color = iconColors[report.icon] || "#0ea5e9";
             const bg = iconBgs[report.icon] || "rgba(14, 165, 233, 0.12)";
-            const isGenerating = generatingId === report.id;
+            const isGenerating = generatingId === report.type;
 
             return (
               <div key={report.id} className="report-card">
@@ -163,7 +169,7 @@ export default function ReportsPage() {
                 >
                   <button
                     className={`btn ${isGenerating ? "btn-secondary" : "btn-primary"}`}
-                    onClick={() => handleGenerate(report.id)}
+                    onClick={() => handleGenerate(report.type)}
                     disabled={isGenerating}
                   >
                     {isGenerating ? (

@@ -17,9 +17,11 @@ import {
   X,
   FileSpreadsheet,
   AlertCircle,
+  Check,
+  Loader2,
 } from "lucide-react";
 import { mockShipments, type Shipment } from "@/lib/mock-data";
-import { getShipments, uploadShipmentsCSV } from "@/lib/api";
+import { getShipments, uploadShipmentsCSV, createShipment, getCities, downloadCSVTemplate } from "@/lib/api";
 
 const priorityBadge: Record<string, string> = {
   normal: "badge-ghost",
@@ -42,9 +44,88 @@ const statusBadge: Record<string, string> = {
 };
 
 export default function ShipmentsPage() {
-  const [shipments, setShipments] = useState<Shipment[]>(mockShipments);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
 
   useEffect(() => {
+    getShipments()
+      .then((data) => {
+        if (data?.length) {
+          const mapped = data.map((s: any) => ({
+            id: s.id,
+            shipmentCode: s.shipment_code,
+            originCity: s.origin_city,
+            originLat: s.origin_lat,
+            originLng: s.origin_lng,
+            destCity: s.dest_city,
+            destLat: s.dest_lat,
+            destLng: s.dest_lng,
+            weightKg: s.weight_kg,
+            volumeM3: s.volume_m3,
+            lengthCm: s.length_cm,
+            widthCm: s.width_cm,
+            heightCm: s.height_cm,
+            deliveryWindowStart: s.delivery_window_start,
+            deliveryWindowEnd: s.delivery_window_end,
+            priority: s.priority,
+            cargoType: s.cargo_type,
+            status: s.status,
+            createdAt: s.created_at,
+          }));
+          setShipments(mapped);
+        } else {
+          setShipments(mockShipments);
+        }
+      })
+      .catch(() => {
+        setShipments(mockShipments);
+      });
+  }, []);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [sortField, setSortField] = useState<keyof Shipment>("createdAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newShipment, setNewShipment] = useState({
+    origin_city: "",
+    dest_city: "",
+    weight_kg: 0,
+    volume_m3: 0,
+    length_cm: 0,
+    width_cm: 0,
+    height_cm: 0,
+    priority: "normal",
+    cargo_type: "general",
+    delivery_window: "same",
+    special_instructions: "",
+  });
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [cities, setCities] = useState<Array<{ name: string; lat: number; lng: number }>>([]);
+  const perPage = 15;
+
+  useEffect(() => {
+    getCities()
+      .then((data) => {
+        if (data?.length) {
+          setCities(data.map((c: any) => ({ name: c.name, lat: c.lat, lng: c.lng })));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const refreshShipments = () => {
     getShipments()
       .then((data) => {
         if (data?.length) {
@@ -73,17 +154,116 @@ export default function ShipmentsPage() {
         }
       })
       .catch(() => {});
-  }, []);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [sortField, setSortField] = useState<keyof Shipment>("createdAt");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const perPage = 15;
+  };
+
+  const handleCsvUpload = async () => {
+    if (!csvFile) return;
+    setIsUploading(true);
+    setUploadMsg(null);
+    try {
+      const result = await uploadShipmentsCSV(csvFile);
+      const inserted = result?.inserted ?? 0;
+      const skipped = result?.skipped ?? 0;
+      let message = `Successfully imported ${inserted} shipments`;
+      if (skipped > 0) {
+        message += ` (${skipped} duplicates skipped)`;
+      }
+      showToast(message);
+      setShowUploadModal(false);
+      setCsvFile(null);
+      refreshShipments();
+    } catch (err: any) {
+      const msg = err?.message || "Failed to upload CSV. Check the file format.";
+      showToast(msg, "error");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleCreateShipment = async () => {
+    if (!newShipment.origin_city || !newShipment.dest_city) {
+      showToast("Origin and Destination cities are required.", "error");
+      return;
+    }
+    setIsCreating(true);
+    try {
+      // Try to find city in cities list (case-insensitive, partial match)
+      const findCity = (cityName: string) => {
+        if (!cityName) return null;
+        const lowerName = cityName.toLowerCase().trim();
+        return cities.find((c) => 
+          c.name.toLowerCase() === lowerName || 
+          c.name.toLowerCase().includes(lowerName) ||
+          lowerName.includes(c.name.toLowerCase())
+        );
+      };
+      
+      const originCity = findCity(newShipment.origin_city);
+      const destCity = findCity(newShipment.dest_city);
+      
+      const now = new Date();
+      const deliveryEnd = new Date(now);
+      if (newShipment.delivery_window === "same") {
+        deliveryEnd.setHours(18, 0, 0, 0);
+      } else if (newShipment.delivery_window === "next") {
+        deliveryEnd.setDate(deliveryEnd.getDate() + 1);
+        deliveryEnd.setHours(18, 0, 0, 0);
+      } else {
+        deliveryEnd.setDate(deliveryEnd.getDate() + 2);
+        deliveryEnd.setHours(18, 0, 0, 0);
+      }
+
+      const shipmentData: any = {
+        origin_city: newShipment.origin_city.trim(),
+        dest_city: newShipment.dest_city.trim(),
+        weight_kg: newShipment.weight_kg || 100,
+        volume_m3: newShipment.volume_m3 || (newShipment.length_cm * newShipment.width_cm * newShipment.height_cm / 1000000) || 1,
+        length_cm: newShipment.length_cm || 100,
+        width_cm: newShipment.width_cm || 80,
+        height_cm: newShipment.height_cm || 60,
+        priority: newShipment.priority,
+        cargo_type: newShipment.cargo_type,
+        delivery_window_start: now.toISOString(),
+        delivery_window_end: deliveryEnd.toISOString(),
+        status: "pending",
+      };
+
+      // Add coordinates if found, backend will geocode if missing
+      if (originCity) {
+        shipmentData.origin_lat = originCity.lat;
+        shipmentData.origin_lng = originCity.lng;
+      }
+      if (destCity) {
+        shipmentData.dest_lat = destCity.lat;
+        shipmentData.dest_lng = destCity.lng;
+      }
+      // If cities not found, backend will geocode them automatically
+
+      await createShipment(shipmentData);
+      showToast("Shipment created successfully!");
+      setShowAddModal(false);
+      setNewShipment({
+        origin_city: "",
+        dest_city: "",
+        weight_kg: 0,
+        volume_m3: 0,
+        length_cm: 0,
+        width_cm: 0,
+        height_cm: 0,
+        priority: "normal",
+        cargo_type: "general",
+        delivery_window: "same",
+        special_instructions: "",
+      });
+      refreshShipments();
+    } catch (err: any) {
+      const msg = err?.message || "Failed to create shipment.";
+      showToast(msg, "error");
+      console.error("Shipment creation error:", err);
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   const filtered = shipments.filter((s) => {
     const matchSearch =
@@ -468,33 +648,54 @@ export default function ShipmentsPage() {
                 </button>
               </div>
               <div className="card-body">
-                <div className="upload-zone">
+                <label
+                  className="upload-zone"
+                  style={{ cursor: "pointer", position: "relative" }}
+                >
+                  <input
+                    type="file"
+                    accept=".csv"
+                    style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) setCsvFile(f);
+                    }}
+                  />
                   <div className="upload-zone-icon">
                     <FileSpreadsheet
                       size={26}
                       style={{ color: "var(--lorri-primary)" }}
                     />
                   </div>
-                  <p
-                    style={{
-                      fontSize: "15px",
-                      fontWeight: 650,
-                      color: "var(--text-primary)",
-                      marginBottom: "6px",
+                  {csvFile ? (
+                    <>
+                      <p style={{ fontSize: "15px", fontWeight: 650, color: "var(--text-primary)", marginBottom: "6px" }}>
+                        {csvFile.name}
+                      </p>
+                      <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "14px" }}>
+                        {(csvFile.size / 1024).toFixed(1)} KB · Click to change file
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ fontSize: "15px", fontWeight: 650, color: "var(--text-primary)", marginBottom: "6px" }}>
+                        Drop your CSV file here
+                      </p>
+                      <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "14px" }}>
+                        or click to browse files
+                      </p>
+                    </>
+                  )}
+                </label>
+                <div style={{ display: "flex", justifyContent: "center", marginTop: "14px" }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      downloadCSVTemplate();
                     }}
                   >
-                    Drop your CSV file here
-                  </p>
-                  <p
-                    style={{
-                      fontSize: "13px",
-                      color: "var(--text-secondary)",
-                      marginBottom: "14px",
-                    }}
-                  >
-                    or click to browse files
-                  </p>
-                  <button className="btn btn-secondary btn-sm">
                     <Download size={13} /> Download Template
                   </button>
                 </div>
@@ -519,12 +720,20 @@ export default function ShipmentsPage() {
               >
                 <button
                   className="btn btn-secondary"
-                  onClick={() => setShowUploadModal(false)}
+                  onClick={() => { setShowUploadModal(false); setCsvFile(null); }}
                 >
                   Cancel
                 </button>
-                <button className="btn btn-primary">
-                  <Upload size={14} /> Upload
+                <button
+                  className="btn btn-primary"
+                  disabled={!csvFile || isUploading}
+                  onClick={handleCsvUpload}
+                >
+                  {isUploading ? (
+                    <><div className="loading-spinner" style={{ width: "14px", height: "14px" }} /> Uploading...</>
+                  ) : (
+                    <><Upload size={14} /> Upload</>
+                  )}
                 </button>
               </div>
             </div>
@@ -578,35 +787,37 @@ export default function ShipmentsPage() {
                     gap: "16px",
                   }}
                 >
-                  {[
-                    {
-                      label: "Origin City",
-                      placeholder: "e.g. Delhi",
-                      type: "text",
-                    },
-                    {
-                      label: "Destination City",
-                      placeholder: "e.g. Mumbai",
-                      type: "text",
-                    },
-                    { label: "Weight (kg)", placeholder: "0", type: "number" },
-                    { label: "Volume (m³)", placeholder: "0", type: "number" },
-                    { label: "Length (cm)", placeholder: "0", type: "number" },
-                    { label: "Width (cm)", placeholder: "0", type: "number" },
-                    { label: "Height (cm)", placeholder: "0", type: "number" },
-                  ].map((f) => (
-                    <div key={f.label}>
-                      <label className="label">{f.label}</label>
-                      <input
-                        className="input"
-                        type={f.type}
-                        placeholder={f.placeholder}
-                      />
-                    </div>
-                  ))}
+                  <div>
+                    <label className="label">Origin City</label>
+                    <input className="input" type="text" placeholder="e.g. Delhi" value={newShipment.origin_city} onChange={(e) => setNewShipment((p) => ({ ...p, origin_city: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="label">Destination City</label>
+                    <input className="input" type="text" placeholder="e.g. Mumbai" value={newShipment.dest_city} onChange={(e) => setNewShipment((p) => ({ ...p, dest_city: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="label">Weight (kg)</label>
+                    <input className="input" type="number" placeholder="0" value={newShipment.weight_kg} onChange={(e) => setNewShipment((p) => ({ ...p, weight_kg: parseFloat(e.target.value) || 0 }))} />
+                  </div>
+                  <div>
+                    <label className="label">Volume (m³)</label>
+                    <input className="input" type="number" placeholder="0" value={newShipment.volume_m3} onChange={(e) => setNewShipment((p) => ({ ...p, volume_m3: parseFloat(e.target.value) || 0 }))} />
+                  </div>
+                  <div>
+                    <label className="label">Length (cm)</label>
+                    <input className="input" type="number" placeholder="0" value={newShipment.length_cm} onChange={(e) => setNewShipment((p) => ({ ...p, length_cm: parseFloat(e.target.value) || 0 }))} />
+                  </div>
+                  <div>
+                    <label className="label">Width (cm)</label>
+                    <input className="input" type="number" placeholder="0" value={newShipment.width_cm} onChange={(e) => setNewShipment((p) => ({ ...p, width_cm: parseFloat(e.target.value) || 0 }))} />
+                  </div>
+                  <div>
+                    <label className="label">Height (cm)</label>
+                    <input className="input" type="number" placeholder="0" value={newShipment.height_cm} onChange={(e) => setNewShipment((p) => ({ ...p, height_cm: parseFloat(e.target.value) || 0 }))} />
+                  </div>
                   <div>
                     <label className="label">Priority</label>
-                    <select className="input">
+                    <select className="input" value={newShipment.priority} onChange={(e) => setNewShipment((p) => ({ ...p, priority: e.target.value }))}>
                       <option value="normal">Normal</option>
                       <option value="express">Express</option>
                       <option value="critical">Critical</option>
@@ -614,7 +825,7 @@ export default function ShipmentsPage() {
                   </div>
                   <div>
                     <label className="label">Cargo Type</label>
-                    <select className="input">
+                    <select className="input" value={newShipment.cargo_type} onChange={(e) => setNewShipment((p) => ({ ...p, cargo_type: e.target.value }))}>
                       <option value="general">📦 General</option>
                       <option value="fragile">⚡ Fragile</option>
                       <option value="refrigerated">❄️ Refrigerated</option>
@@ -623,7 +834,7 @@ export default function ShipmentsPage() {
                   </div>
                   <div>
                     <label className="label">Delivery Window</label>
-                    <select className="input">
+                    <select className="input" value={newShipment.delivery_window} onChange={(e) => setNewShipment((p) => ({ ...p, delivery_window: e.target.value }))}>
                       <option value="same">Same Day</option>
                       <option value="next">Next Day</option>
                       <option value="two">2-Day</option>
@@ -635,6 +846,8 @@ export default function ShipmentsPage() {
                       className="input textarea"
                       placeholder="Any special handling requirements..."
                       rows={3}
+                      value={newShipment.special_instructions}
+                      onChange={(e) => setNewShipment((p) => ({ ...p, special_instructions: e.target.value }))}
                     />
                   </div>
                 </div>
@@ -653,14 +866,44 @@ export default function ShipmentsPage() {
                 >
                   Cancel
                 </button>
-                <button className="btn btn-primary">
-                  <Plus size={14} /> Create Shipment
+                <button className="btn btn-primary" onClick={handleCreateShipment} disabled={isCreating}>
+                  {isCreating ? (
+                    <><div className="loading-spinner" style={{ width: "14px", height: "14px" }} /> Creating...</>
+                  ) : (
+                    <><Plus size={14} /> Create Shipment</>
+                  )}
                 </button>
               </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            right: "24px",
+            padding: "14px 20px",
+            borderRadius: "10px",
+            background: toast.type === "success" ? "#0CAF60" : "#DF1B41",
+            color: "white",
+            fontSize: "13px",
+            fontWeight: 600,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+            zIndex: 100,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            animation: "slide-up 0.3s ease",
+          }}
+        >
+          {toast.type === "success" ? <Check size={16} /> : <AlertCircle size={16} />}
+          {toast.message}
+        </div>
+      )}
     </>
   );
 }

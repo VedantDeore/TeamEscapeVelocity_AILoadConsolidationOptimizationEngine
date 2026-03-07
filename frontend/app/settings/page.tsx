@@ -27,6 +27,8 @@ import {
   getDepots,
   getCostParams,
   updateCostParams,
+  createVehicle,
+  createDepot,
 } from "@/lib/api";
 
 export default function SettingsPage() {
@@ -34,6 +36,61 @@ export default function SettingsPage() {
   const [depots, setDepots] = useState<DepotLocation[]>(mockDepots);
   const [costParams, setCostParams] = useState(mockCostParams);
   const [saved, setSaved] = useState(false);
+  const [showAddVehicle, setShowAddVehicle] = useState(false);
+  const [showAddDepot, setShowAddDepot] = useState(false);
+  const [addingVehicle, setAddingVehicle] = useState(false);
+  const [addingDepot, setAddingDepot] = useState(false);
+  const [newVehicle, setNewVehicle] = useState({
+    name: "", type: "heavy", max_weight_kg: 0, max_volume_m3: 0,
+    length_cm: 0, width_cm: 0, height_cm: 0, cost_per_km: 0, emission_factor: 0.062,
+  });
+  const [newDepot, setNewDepot] = useState({ name: "", city: "", lat: 0, lng: 0 });
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToastMsg = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+
+  const refreshVehicles = () => {
+    getVehicles().then((data) => {
+      if (data?.length) {
+        setVehicles(data.map((v: any) => ({
+          id: v.id, name: v.name, type: v.type, maxWeightKg: v.max_weight_kg,
+          maxVolumeM3: v.max_volume_m3, lengthCm: v.length_cm, widthCm: v.width_cm,
+          heightCm: v.height_cm, costPerKm: v.cost_per_km, emissionFactor: v.emission_factor,
+          isAvailable: v.is_available,
+        })));
+      }
+    }).catch(() => {});
+  };
+
+  const refreshDepots = () => {
+    getDepots().then((data) => { if (data?.length) setDepots(data); }).catch(() => {});
+  };
+
+  const handleAddVehicle = async () => {
+    if (!newVehicle.name) return;
+    setAddingVehicle(true);
+    try {
+      await createVehicle(newVehicle);
+      showToastMsg("Vehicle added successfully!");
+      setShowAddVehicle(false);
+      setNewVehicle({ name: "", type: "heavy", max_weight_kg: 0, max_volume_m3: 0, length_cm: 0, width_cm: 0, height_cm: 0, cost_per_km: 0, emission_factor: 0.062 });
+      refreshVehicles();
+    } catch { showToastMsg("Failed to add vehicle."); }
+    finally { setAddingVehicle(false); }
+  };
+
+  const handleAddDepot = async () => {
+    if (!newDepot.name || !newDepot.city) return;
+    setAddingDepot(true);
+    try {
+      await createDepot(newDepot);
+      showToastMsg("Depot added successfully!");
+      setShowAddDepot(false);
+      setNewDepot({ name: "", city: "", lat: 0, lng: 0 });
+      refreshDepots();
+    } catch { showToastMsg("Failed to add depot."); }
+    finally { setAddingDepot(false); }
+  };
 
   useEffect(() => {
     getVehicles()
@@ -126,6 +183,7 @@ export default function SettingsPage() {
               <button
                 className="btn btn-sm btn-primary"
                 style={{ marginLeft: "auto" }}
+                onClick={() => setShowAddVehicle(true)}
               >
                 <Plus size={13} /> Add Vehicle
               </button>
@@ -253,6 +311,7 @@ export default function SettingsPage() {
               <button
                 className="btn btn-sm btn-secondary"
                 style={{ alignSelf: "flex-start" }}
+                onClick={() => setShowAddDepot(true)}
               >
                 <Plus size={13} /> Add Depot
               </button>
@@ -469,6 +528,70 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Add Vehicle Modal */}
+      {showAddVehicle && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,37,64,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setShowAddVehicle(false)}>
+          <div className="card animate-slide-up" style={{ width: "580px", maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
+            <div className="card-header">
+              <div><div className="card-title">Add New Vehicle</div><div className="card-description">Register a new fleet vehicle</div></div>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowAddVehicle(false)}><span style={{ fontSize: "18px" }}>×</span></button>
+            </div>
+            <div className="card-body">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+                <div><label className="label">Vehicle Name</label><input className="input" placeholder="e.g. Ashok Leyland 1612" value={newVehicle.name} onChange={(e) => setNewVehicle((p) => ({ ...p, name: e.target.value }))} /></div>
+                <div><label className="label">Type</label><select className="input" value={newVehicle.type} onChange={(e) => setNewVehicle((p) => ({ ...p, type: e.target.value }))}><option value="heavy">Heavy</option><option value="medium">Medium</option><option value="light">Light</option></select></div>
+                <div><label className="label">Max Weight (kg)</label><input className="input" type="number" value={newVehicle.max_weight_kg} onChange={(e) => setNewVehicle((p) => ({ ...p, max_weight_kg: parseFloat(e.target.value) || 0 }))} /></div>
+                <div><label className="label">Max Volume (m³)</label><input className="input" type="number" value={newVehicle.max_volume_m3} onChange={(e) => setNewVehicle((p) => ({ ...p, max_volume_m3: parseFloat(e.target.value) || 0 }))} /></div>
+                <div><label className="label">Length (cm)</label><input className="input" type="number" value={newVehicle.length_cm} onChange={(e) => setNewVehicle((p) => ({ ...p, length_cm: parseFloat(e.target.value) || 0 }))} /></div>
+                <div><label className="label">Width (cm)</label><input className="input" type="number" value={newVehicle.width_cm} onChange={(e) => setNewVehicle((p) => ({ ...p, width_cm: parseFloat(e.target.value) || 0 }))} /></div>
+                <div><label className="label">Height (cm)</label><input className="input" type="number" value={newVehicle.height_cm} onChange={(e) => setNewVehicle((p) => ({ ...p, height_cm: parseFloat(e.target.value) || 0 }))} /></div>
+                <div><label className="label">Cost per km (₹)</label><input className="input" type="number" value={newVehicle.cost_per_km} onChange={(e) => setNewVehicle((p) => ({ ...p, cost_per_km: parseFloat(e.target.value) || 0 }))} /></div>
+                <div><label className="label">Emission Factor</label><input className="input" type="number" step="0.001" value={newVehicle.emission_factor} onChange={(e) => setNewVehicle((p) => ({ ...p, emission_factor: parseFloat(e.target.value) || 0 }))} /></div>
+              </div>
+            </div>
+            <div className="card-footer" style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+              <button className="btn btn-secondary" onClick={() => setShowAddVehicle(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleAddVehicle} disabled={addingVehicle || !newVehicle.name}>
+                {addingVehicle ? <><div className="loading-spinner" style={{ width: "14px", height: "14px" }} /> Adding...</> : <><Plus size={14} /> Add Vehicle</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Depot Modal */}
+      {showAddDepot && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,37,64,0.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setShowAddDepot(false)}>
+          <div className="card animate-slide-up" style={{ width: "480px", maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
+            <div className="card-header">
+              <div><div className="card-title">Add New Depot</div><div className="card-description">Register a depot location</div></div>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowAddDepot(false)}><span style={{ fontSize: "18px" }}>×</span></button>
+            </div>
+            <div className="card-body">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+                <div><label className="label">Depot Name</label><input className="input" placeholder="e.g. Mumbai Central Hub" value={newDepot.name} onChange={(e) => setNewDepot((p) => ({ ...p, name: e.target.value }))} /></div>
+                <div><label className="label">City</label><input className="input" placeholder="e.g. Mumbai" value={newDepot.city} onChange={(e) => setNewDepot((p) => ({ ...p, city: e.target.value }))} /></div>
+                <div><label className="label">Latitude</label><input className="input" type="number" step="0.0001" value={newDepot.lat} onChange={(e) => setNewDepot((p) => ({ ...p, lat: parseFloat(e.target.value) || 0 }))} /></div>
+                <div><label className="label">Longitude</label><input className="input" type="number" step="0.0001" value={newDepot.lng} onChange={(e) => setNewDepot((p) => ({ ...p, lng: parseFloat(e.target.value) || 0 }))} /></div>
+              </div>
+            </div>
+            <div className="card-footer" style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+              <button className="btn btn-secondary" onClick={() => setShowAddDepot(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleAddDepot} disabled={addingDepot || !newDepot.name || !newDepot.city}>
+                {addingDepot ? <><div className="loading-spinner" style={{ width: "14px", height: "14px" }} /> Adding...</> : <><Plus size={14} /> Add Depot</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div style={{ position: "fixed", bottom: "24px", right: "24px", padding: "14px 20px", borderRadius: "10px", background: "#0CAF60", color: "white", fontSize: "13px", fontWeight: 600, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", zIndex: 100, display: "flex", alignItems: "center", gap: "8px", animation: "slide-up 0.3s ease" }}>
+          <Check size={16} /> {toast}
+        </div>
+      )}
     </>
   );
 }
