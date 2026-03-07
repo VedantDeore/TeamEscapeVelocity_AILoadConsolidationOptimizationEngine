@@ -1,12 +1,30 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
-  });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      ...options,
+    });
+    if (!res.ok) {
+      let errorMessage = `API error: ${res.status}`;
+      try {
+        const errorData = await res.json();
+        errorMessage = errorData.error || errorData.message || errorMessage;
+      } catch {
+        // If response is not JSON, use status text
+        errorMessage = res.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+    return res.json();
+  } catch (error: any) {
+    // Handle network errors (backend not running, CORS, etc.)
+    if (error.name === "TypeError" && error.message.includes("fetch")) {
+      throw new Error("Cannot connect to backend server. Please ensure the Flask backend is running on http://localhost:5000");
+    }
+    throw error;
+  }
 }
 
 // ---- Shipments ----
@@ -37,12 +55,28 @@ export async function deleteShipment(id: string) {
 export async function uploadShipmentsCSV(file: File) {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${API_BASE}/api/shipments/upload`, {
-    method: "POST",
-    body: formData,
-  });
-  if (!res.ok) throw new Error(`Upload error: ${res.status}`);
-  return res.json();
+  try {
+    const res = await fetch(`${API_BASE}/api/shipments/upload`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      let errorMessage = `Upload error: ${res.status}`;
+      try {
+        const errorData = await res.json();
+        errorMessage = errorData.error || errorData.message || errorMessage;
+      } catch {
+        errorMessage = res.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+    return res.json();
+  } catch (error: any) {
+    if (error.name === "TypeError" && error.message.includes("fetch")) {
+      throw new Error("Cannot connect to backend server. Please ensure the Flask backend is running on http://localhost:5000");
+    }
+    throw error;
+  }
 }
 
 // ---- Consolidation ----
@@ -129,8 +163,29 @@ export async function getVehicles() {
   return fetchApi<any[]>("/api/vehicles");
 }
 
+export async function createVehicle(data: any) {
+  return fetchApi<any>("/api/vehicles", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateVehicle(id: string, data: any) {
+  return fetchApi<any>(`/api/vehicles/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function getDepots() {
   return fetchApi<any[]>("/api/depots");
+}
+
+export async function createDepot(data: any) {
+  return fetchApi<any>("/api/depots", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
 }
 
 export async function getCostParams() {
@@ -146,4 +201,20 @@ export async function updateCostParams(data: any) {
 
 export async function getCities() {
   return fetchApi<any[]>("/api/cities");
+}
+
+export async function downloadCSVTemplate() {
+  const csvContent = `shipment_id,origin_city,dest_city,weight_kg,volume_m3,length_cm,width_cm,height_cm,priority,cargo_type,delivery_start,delivery_end,origin_lat,origin_lng,dest_lat,dest_lng
+SHP-0001,Delhi,Mumbai,1200,5.2,200,150,180,normal,general,2026-03-07T08:00:00+00:00,2026-03-08T18:00:00+00:00,28.6139,77.2090,19.0760,72.8777
+SHP-0002,Mumbai,Chennai,850,3.8,180,120,150,express,fragile,2026-03-07T09:00:00+00:00,2026-03-08T20:00:00+00:00,19.0760,72.8777,13.0827,80.2707
+SHP-0003,Bangalore,Delhi,2100,8.5,250,180,200,critical,general,2026-03-07T10:00:00+00:00,2026-03-09T18:00:00+00:00,12.9716,77.5946,28.6139,77.2090`;
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", "shipments_template.csv");
+  link.style.visibility = "hidden";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
