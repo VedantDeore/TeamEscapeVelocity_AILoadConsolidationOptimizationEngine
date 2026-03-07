@@ -1352,6 +1352,10 @@ select.input,
   animation: spin 0.65s linear infinite;
 }
 
+.spin {
+  animation: spin 0.65s linear infinite;
+}
+
 /* ════════════════════════════════════════════════════════════
    STAT HIGHLIGHT ROW (Stripe "backbone of commerce" style)
    ════════════════════════════════════════════════════════════ */
