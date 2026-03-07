@@ -334,10 +334,22 @@ def submit_feedback(cluster_id):
             "action":     action,
             "reason":     data.get("reason", ""),
         }).execute()
+
+        # If rejected, reset the shipments back to "pending" so they can be re-consolidated
+        if action == "rejected":
+            try:
+                cs = sb.table("cluster_shipments").select("shipment_id").eq("cluster_id", cluster_id).execute()
+                shipment_ids = [r["shipment_id"] for r in (cs.data or [])]
+                if shipment_ids:
+                    sb.table("shipments").update({"status": "pending"}).in_("id", shipment_ids).execute()
+            except Exception:
+                pass
+
         # Activity feed
         sb.table("activity_feed").insert({
             "type":      "consolidation",
-            "message":   f"Cluster {cluster_id[:8]}… {action} by logistics manager",
+            "message":   f"Cluster {cluster_id[:8]}… {action} by logistics manager"
+                         + (" — shipments returned to pending" if action == "rejected" else ""),
             "timestamp": "just now",
             "icon":      "check-circle" if action == "accepted" else "x-circle",
         }).execute()

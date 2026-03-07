@@ -22,10 +22,7 @@ import {
   Warehouse,
   X,
 } from "lucide-react";
-import {
-  type Vehicle,
-  type DepotLocation,
-} from "@/lib/mock-data";
+import { type Vehicle, type DepotLocation } from "@/lib/mock-data";
 import {
   getVehicles,
   getDepots,
@@ -33,6 +30,10 @@ import {
   updateCostParams,
   createVehicle,
   createDepot,
+  deleteVehicle,
+  deleteDepot,
+  geocodeAddress,
+  updateVehicle,
 } from "@/lib/api";
 
 type SettingsTab =
@@ -125,6 +126,21 @@ export default function SettingsPage() {
     lng: 0,
   });
   const [toast, setToast] = useState<string | null>(null);
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [showEditVehicle, setShowEditVehicle] = useState(false);
+  const [editVehicle, setEditVehicle] = useState({
+    id: "",
+    name: "",
+    type: "heavy",
+    max_weight_kg: 0,
+    max_volume_m3: 0,
+    length_cm: 0,
+    width_cm: 0,
+    height_cm: 0,
+    cost_per_km: 0,
+    emission_factor: 0.062,
+  });
+  const [savingVehicle, setSavingVehicle] = useState(false);
 
   const showToastMsg = (msg: string) => {
     setToast(msg);
@@ -193,11 +209,56 @@ export default function SettingsPage() {
     }
   };
 
+  const openEditVehicle = (v: Vehicle) => {
+    setEditVehicle({
+      id: v.id,
+      name: v.name,
+      type: v.type,
+      max_weight_kg: v.maxWeightKg,
+      max_volume_m3: v.maxVolumeM3,
+      length_cm: v.lengthCm,
+      width_cm: v.widthCm,
+      height_cm: v.heightCm,
+      cost_per_km: v.costPerKm,
+      emission_factor: v.emissionFactor,
+    });
+    setShowEditVehicle(true);
+  };
+
+  const handleSaveVehicle = async () => {
+    if (!editVehicle.name) return;
+    setSavingVehicle(true);
+    try {
+      const { id, ...data } = editVehicle;
+      await updateVehicle(id, data);
+      showToastMsg("Vehicle updated successfully!");
+      setShowEditVehicle(false);
+      refreshVehicles();
+    } catch {
+      showToastMsg("Failed to update vehicle.");
+    } finally {
+      setSavingVehicle(false);
+    }
+  };
+
   const handleAddDepot = async () => {
     if (!newDepot.name || !newDepot.city) return;
     setAddingDepot(true);
     try {
-      await createDepot(newDepot);
+      // Auto-geocode if lat/lng not set
+      let depotData = { ...newDepot };
+      if ((!depotData.lat || !depotData.lng) && depotData.city) {
+        try {
+          const geo = await geocodeAddress(depotData.city);
+          if (geo) {
+            depotData.lat = geo.lat;
+            depotData.lng = geo.lng;
+          }
+        } catch {
+          // Geocoding failed, backend will try again
+        }
+      }
+      await createDepot(depotData);
       showToastMsg("Depot added successfully!");
       setShowAddDepot(false);
       setNewDepot({ name: "", city: "", lat: 0, lng: 0 });
@@ -442,8 +503,12 @@ export default function SettingsPage() {
                           const tc =
                             VEHICLE_TYPE_COLORS[v.type] ||
                             VEHICLE_TYPE_COLORS.heavy;
+                          const archived = v.isAvailable === false;
                           return (
-                            <tr key={v.id}>
+                            <tr
+                              key={v.id}
+                              style={archived ? { opacity: 0.5 } : undefined}
+                            >
                               <td>
                                 <div
                                   style={{
@@ -455,14 +520,36 @@ export default function SettingsPage() {
                                   <div className="stg-vehicle-avatar">
                                     <Truck size={14} />
                                   </div>
-                                  <span
+                                  <div
                                     style={{
-                                      fontWeight: 600,
-                                      color: "var(--text-primary)",
+                                      display: "flex",
+                                      flexDirection: "column",
                                     }}
                                   >
-                                    {v.name}
-                                  </span>
+                                    <span
+                                      style={{
+                                        fontWeight: 600,
+                                        color: "var(--text-primary)",
+                                        textDecoration: archived
+                                          ? "line-through"
+                                          : undefined,
+                                      }}
+                                    >
+                                      {v.name}
+                                    </span>
+                                    {archived && (
+                                      <span
+                                        style={{
+                                          fontSize: 10,
+                                          color: "var(--lorri-danger)",
+                                          fontWeight: 700,
+                                          letterSpacing: "0.5px",
+                                        }}
+                                      >
+                                        ARCHIVED
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </td>
                               <td>
@@ -513,10 +600,14 @@ export default function SettingsPage() {
                               </td>
                               <td>
                                 <span
-                                  className={`stg-status ${v.isAvailable ? "stg-status--on" : "stg-status--off"}`}
+                                  className={`stg-status ${archived ? "stg-status--off" : v.isAvailable ? "stg-status--on" : "stg-status--off"}`}
                                 >
                                   <span className="stg-status-dot" />
-                                  {v.isAvailable ? "Online" : "Offline"}
+                                  {archived
+                                    ? "Archived"
+                                    : v.isAvailable
+                                      ? "Online"
+                                      : "Offline"}
                                 </span>
                               </td>
                               <td>
@@ -524,19 +615,66 @@ export default function SettingsPage() {
                                   <button
                                     className="btn btn-ghost btn-icon"
                                     style={{ width: 28, height: 28 }}
+                                    title="Edit vehicle"
+                                    onClick={() => openEditVehicle(v)}
                                   >
                                     <Edit size={13} />
                                   </button>
-                                  <button
-                                    className="btn btn-ghost btn-icon"
-                                    style={{
-                                      width: 28,
-                                      height: 28,
-                                      color: "var(--lorri-danger)",
-                                    }}
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
+                                  {!archived ? (
+                                    <button
+                                      className="btn btn-ghost btn-icon"
+                                      style={{
+                                        width: 28,
+                                        height: 28,
+                                        color: "var(--lorri-danger)",
+                                      }}
+                                      title="Archive vehicle"
+                                      onClick={async () => {
+                                        if (
+                                          !confirm(
+                                            `Archive vehicle "${v.name}"? It will be marked as archived but kept in history.`,
+                                          )
+                                        )
+                                          return;
+                                        try {
+                                          await deleteVehicle(v.id);
+                                          showToastMsg("Vehicle archived");
+                                          refreshVehicles();
+                                        } catch {
+                                          showToastMsg(
+                                            "Failed to archive vehicle",
+                                          );
+                                        }
+                                      }}
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      className="btn btn-ghost btn-icon"
+                                      style={{
+                                        width: 28,
+                                        height: 28,
+                                        color: "var(--lorri-success, #10b981)",
+                                      }}
+                                      title="Restore vehicle"
+                                      onClick={async () => {
+                                        try {
+                                          await updateVehicle(v.id, {
+                                            is_available: true,
+                                          });
+                                          showToastMsg("Vehicle restored");
+                                          refreshVehicles();
+                                        } catch {
+                                          showToastMsg(
+                                            "Failed to restore vehicle",
+                                          );
+                                        }
+                                      }}
+                                    >
+                                      <Check size={13} />
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -574,12 +712,35 @@ export default function SettingsPage() {
                           <div className="stg-depot-icon">
                             <MapPin size={18} />
                           </div>
-                          <button
-                            className="btn btn-ghost btn-icon"
-                            style={{ width: 28, height: 28 }}
-                          >
-                            <Edit size={13} />
-                          </button>
+                          <div style={{ display: "flex", gap: 2 }}>
+                            <button
+                              className="btn btn-ghost btn-icon"
+                              style={{ width: 28, height: 28 }}
+                            >
+                              <Edit size={13} />
+                            </button>
+                            <button
+                              className="btn btn-ghost btn-icon"
+                              style={{
+                                width: 28,
+                                height: 28,
+                                color: "var(--lorri-danger)",
+                              }}
+                              onClick={async () => {
+                                if (!confirm(`Delete depot "${depot.name}"?`))
+                                  return;
+                                try {
+                                  await deleteDepot(depot.id);
+                                  showToastMsg("Depot deleted");
+                                  refreshDepots();
+                                } catch {
+                                  showToastMsg("Failed to delete depot");
+                                }
+                              }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         </div>
                         <div className="stg-depot-name">{depot.name}</div>
                         <div className="stg-depot-city">{depot.city}</div>
@@ -949,6 +1110,7 @@ export default function SettingsPage() {
         <div className="stg-overlay" onClick={() => setShowAddVehicle(false)}>
           <div
             className="stg-modal animate-slide-up"
+            style={{ maxWidth: 720 }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="stg-modal-header">
@@ -966,6 +1128,129 @@ export default function SettingsPage() {
               </button>
             </div>
             <div className="stg-modal-body">
+              {/* Quick presets */}
+              <div
+                style={{
+                  marginBottom: 16,
+                  padding: "12px 16px",
+                  background: "rgba(99,91,255,0.04)",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid rgba(99,91,255,0.10)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "#635BFF",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                    marginBottom: 8,
+                  }}
+                >
+                  🚛 Quick Presets
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {[
+                    {
+                      label: "Tata Ace (Light)",
+                      type: "light",
+                      max_weight_kg: 750,
+                      max_volume_m3: 3.5,
+                      length_cm: 210,
+                      width_cm: 155,
+                      height_cm: 155,
+                      cost_per_km: 8,
+                      emission_factor: 0.035,
+                    },
+                    {
+                      label: "Eicher 14ft (Medium)",
+                      type: "medium",
+                      max_weight_kg: 5000,
+                      max_volume_m3: 20,
+                      length_cm: 430,
+                      width_cm: 215,
+                      height_cm: 215,
+                      cost_per_km: 18,
+                      emission_factor: 0.048,
+                    },
+                    {
+                      label: "Ashok Leyland 1612 (Heavy)",
+                      type: "heavy",
+                      max_weight_kg: 12000,
+                      max_volume_m3: 42,
+                      length_cm: 720,
+                      width_cm: 240,
+                      height_cm: 240,
+                      cost_per_km: 28,
+                      emission_factor: 0.062,
+                    },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      className="btn btn-ghost btn-sm"
+                      style={{
+                        fontSize: "11px",
+                        padding: "4px 10px",
+                        border: "1px solid #e3e8ee",
+                      }}
+                      onClick={() =>
+                        setNewVehicle({
+                          name: preset.label.split(" (")[0],
+                          type: preset.type,
+                          max_weight_kg: preset.max_weight_kg,
+                          max_volume_m3: preset.max_volume_m3,
+                          length_cm: preset.length_cm,
+                          width_cm: preset.width_cm,
+                          height_cm: preset.height_cm,
+                          cost_per_km: preset.cost_per_km,
+                          emission_factor: preset.emission_factor,
+                        })
+                      }
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Validation warnings */}
+              {(() => {
+                const warnings: string[] = [];
+                if (!newVehicle.name) warnings.push("Vehicle name is required");
+                if (newVehicle.max_weight_kg <= 0)
+                  warnings.push("Max weight must be greater than 0");
+                if (
+                  newVehicle.length_cm <= 0 ||
+                  newVehicle.width_cm <= 0 ||
+                  newVehicle.height_cm <= 0
+                )
+                  warnings.push(
+                    "Vehicle dimensions (L×W×H) are needed for 3D packing",
+                  );
+                if (newVehicle.cost_per_km <= 0)
+                  warnings.push("Cost per km helps calculate route costs");
+                return warnings.length > 0 ? (
+                  <div
+                    style={{
+                      marginBottom: 16,
+                      padding: "10px 14px",
+                      background: "rgba(245,158,11,0.06)",
+                      border: "1px solid rgba(245,158,11,0.15)",
+                      borderRadius: "var(--radius-md)",
+                      fontSize: "12px",
+                      color: "#D97706",
+                    }}
+                  >
+                    {warnings.map((w, i) => (
+                      <div key={i} style={{ marginBottom: 2 }}>
+                        ⚠ {w}
+                      </div>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+
               <div
                 style={{
                   display: "grid",
@@ -993,9 +1278,9 @@ export default function SettingsPage() {
                       setNewVehicle((p) => ({ ...p, type: e.target.value }))
                     }
                   >
-                    <option value="heavy">Heavy</option>
-                    <option value="medium">Medium</option>
-                    <option value="light">Light</option>
+                    <option value="heavy">🟣 Heavy (10T+)</option>
+                    <option value="medium">🟡 Medium (3-10T)</option>
+                    <option value="light">🟢 Light (&lt;3T)</option>
                   </select>
                 </div>
                 <div className="stg-field">
@@ -1003,7 +1288,8 @@ export default function SettingsPage() {
                   <input
                     className="input"
                     type="number"
-                    value={newVehicle.max_weight_kg}
+                    placeholder="e.g. 12000"
+                    value={newVehicle.max_weight_kg || ""}
                     onChange={(e) =>
                       setNewVehicle((p) => ({
                         ...p,
@@ -1011,13 +1297,24 @@ export default function SettingsPage() {
                       }))
                     }
                   />
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      color: "var(--text-tertiary)",
+                      marginTop: 2,
+                    }}
+                  >
+                    Heavy: 10,000-16,000 · Medium: 3,000-7,000 · Light:
+                    500-2,000
+                  </span>
                 </div>
                 <div className="stg-field">
                   <label className="label">Max Volume (m³)</label>
                   <input
                     className="input"
                     type="number"
-                    value={newVehicle.max_volume_m3}
+                    placeholder="e.g. 42"
+                    value={newVehicle.max_volume_m3 || ""}
                     onChange={(e) =>
                       setNewVehicle((p) => ({
                         ...p,
@@ -1025,55 +1322,167 @@ export default function SettingsPage() {
                       }))
                     }
                   />
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      color: "var(--text-tertiary)",
+                      marginTop: 2,
+                    }}
+                  >
+                    Auto-calculated:{" "}
+                    {newVehicle.length_cm > 0 &&
+                    newVehicle.width_cm > 0 &&
+                    newVehicle.height_cm > 0
+                      ? `${((newVehicle.length_cm * newVehicle.width_cm * newVehicle.height_cm) / 1e6).toFixed(1)} m³ from dimensions`
+                      : "enter dimensions below"}
+                  </span>
                 </div>
-                <div className="stg-field">
-                  <label className="label">Length (cm)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={newVehicle.length_cm}
-                    onChange={(e) =>
-                      setNewVehicle((p) => ({
-                        ...p,
-                        length_cm: parseFloat(e.target.value) || 0,
-                      }))
-                    }
-                  />
+
+                {/* Dimensions section */}
+                <div className="stg-field" style={{ gridColumn: "1 / -1" }}>
+                  <div
+                    style={{
+                      padding: "14px 16px",
+                      background: "rgba(14,165,233,0.04)",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid rgba(14,165,233,0.12)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        color: "#0ea5e9",
+                        marginBottom: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <Truck size={14} /> Cargo Area Dimensions (cm)
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr 1fr",
+                        gap: 12,
+                      }}
+                    >
+                      <div>
+                        <label className="label" style={{ fontSize: "11px" }}>
+                          Length
+                        </label>
+                        <input
+                          className="input"
+                          type="number"
+                          placeholder="e.g. 720"
+                          value={newVehicle.length_cm || ""}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setNewVehicle((p) => ({
+                              ...p,
+                              length_cm: val,
+                              max_volume_m3:
+                                val > 0 && p.width_cm > 0 && p.height_cm > 0
+                                  ? parseFloat(
+                                      (
+                                        (val * p.width_cm * p.height_cm) /
+                                        1e6
+                                      ).toFixed(1),
+                                    )
+                                  : p.max_volume_m3,
+                            }));
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="label" style={{ fontSize: "11px" }}>
+                          Width
+                        </label>
+                        <input
+                          className="input"
+                          type="number"
+                          placeholder="e.g. 240"
+                          value={newVehicle.width_cm || ""}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setNewVehicle((p) => ({
+                              ...p,
+                              width_cm: val,
+                              max_volume_m3:
+                                p.length_cm > 0 && val > 0 && p.height_cm > 0
+                                  ? parseFloat(
+                                      (
+                                        (p.length_cm * val * p.height_cm) /
+                                        1e6
+                                      ).toFixed(1),
+                                    )
+                                  : p.max_volume_m3,
+                            }));
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="label" style={{ fontSize: "11px" }}>
+                          Height
+                        </label>
+                        <input
+                          className="input"
+                          type="number"
+                          placeholder="e.g. 240"
+                          value={newVehicle.height_cm || ""}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setNewVehicle((p) => ({
+                              ...p,
+                              height_cm: val,
+                              max_volume_m3:
+                                p.length_cm > 0 && p.width_cm > 0 && val > 0
+                                  ? parseFloat(
+                                      (
+                                        (p.length_cm * p.width_cm * val) /
+                                        1e6
+                                      ).toFixed(1),
+                                    )
+                                  : p.max_volume_m3,
+                            }));
+                          }}
+                        />
+                      </div>
+                    </div>
+                    {newVehicle.length_cm > 0 &&
+                      newVehicle.width_cm > 0 &&
+                      newVehicle.height_cm > 0 && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontSize: "11px",
+                            color: "var(--text-secondary)",
+                            textAlign: "center",
+                            fontWeight: 600,
+                          }}
+                        >
+                          📦 {newVehicle.length_cm} × {newVehicle.width_cm} ×{" "}
+                          {newVehicle.height_cm} cm ={" "}
+                          {(
+                            (newVehicle.length_cm *
+                              newVehicle.width_cm *
+                              newVehicle.height_cm) /
+                            1e6
+                          ).toFixed(1)}{" "}
+                          m³
+                        </div>
+                      )}
+                  </div>
                 </div>
-                <div className="stg-field">
-                  <label className="label">Width (cm)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={newVehicle.width_cm}
-                    onChange={(e) =>
-                      setNewVehicle((p) => ({
-                        ...p,
-                        width_cm: parseFloat(e.target.value) || 0,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="stg-field">
-                  <label className="label">Height (cm)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={newVehicle.height_cm}
-                    onChange={(e) =>
-                      setNewVehicle((p) => ({
-                        ...p,
-                        height_cm: parseFloat(e.target.value) || 0,
-                      }))
-                    }
-                  />
-                </div>
+
                 <div className="stg-field">
                   <label className="label">Cost per km (₹)</label>
                   <input
                     className="input"
                     type="number"
-                    value={newVehicle.cost_per_km}
+                    placeholder="e.g. 28"
+                    value={newVehicle.cost_per_km || ""}
                     onChange={(e) =>
                       setNewVehicle((p) => ({
                         ...p,
@@ -1081,8 +1490,17 @@ export default function SettingsPage() {
                       }))
                     }
                   />
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      color: "var(--text-tertiary)",
+                      marginTop: 2,
+                    }}
+                  >
+                    Includes fuel + driver + maintenance
+                  </span>
                 </div>
-                <div className="stg-field" style={{ gridColumn: "1 / -1" }}>
+                <div className="stg-field">
                   <label className="label">
                     Emission Factor (kg CO₂/ton-km)
                   </label>
@@ -1090,15 +1508,24 @@ export default function SettingsPage() {
                     className="input"
                     type="number"
                     step="0.001"
-                    value={newVehicle.emission_factor}
+                    placeholder="e.g. 0.062"
+                    value={newVehicle.emission_factor || ""}
                     onChange={(e) =>
                       setNewVehicle((p) => ({
                         ...p,
                         emission_factor: parseFloat(e.target.value) || 0,
                       }))
                     }
-                    style={{ maxWidth: 200 }}
                   />
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      color: "var(--text-tertiary)",
+                      marginTop: 2,
+                    }}
+                  >
+                    Heavy: 0.06-0.08 · Medium: 0.04-0.06 · Light: 0.03-0.04
+                  </span>
                 </div>
               </div>
             </div>
@@ -1112,7 +1539,11 @@ export default function SettingsPage() {
               <button
                 className="btn btn-primary"
                 onClick={handleAddVehicle}
-                disabled={addingVehicle || !newVehicle.name}
+                disabled={
+                  addingVehicle ||
+                  !newVehicle.name ||
+                  newVehicle.max_weight_kg <= 0
+                }
               >
                 {addingVehicle ? (
                   <>
@@ -1133,12 +1564,298 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* ── Edit Vehicle Modal ── */}
+      {showEditVehicle && (
+        <div className="stg-overlay" onClick={() => setShowEditVehicle(false)}>
+          <div
+            className="stg-modal animate-slide-up"
+            style={{ maxWidth: 720 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="stg-modal-header">
+              <div>
+                <h3 className="stg-card-title">Edit Vehicle</h3>
+                <p className="stg-card-desc">
+                  Update vehicle specifications and cost parameters
+                </p>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setShowEditVehicle(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="stg-modal-body">
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 16,
+                }}
+              >
+                <div className="stg-field">
+                  <label className="label">Vehicle Name</label>
+                  <input
+                    className="input"
+                    placeholder="e.g. Ashok Leyland 1612"
+                    value={editVehicle.name}
+                    onChange={(e) =>
+                      setEditVehicle((p) => ({ ...p, name: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="stg-field">
+                  <label className="label">Type</label>
+                  <select
+                    className="input"
+                    value={editVehicle.type}
+                    onChange={(e) =>
+                      setEditVehicle((p) => ({ ...p, type: e.target.value }))
+                    }
+                  >
+                    <option value="heavy">Heavy (10T+)</option>
+                    <option value="medium">Medium (3-10T)</option>
+                    <option value="light">Light (&lt;3T)</option>
+                  </select>
+                </div>
+                <div className="stg-field">
+                  <label className="label">Max Weight (kg)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    value={editVehicle.max_weight_kg || ""}
+                    onChange={(e) =>
+                      setEditVehicle((p) => ({
+                        ...p,
+                        max_weight_kg: parseFloat(e.target.value) || 0,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="stg-field">
+                  <label className="label">Max Volume (m³)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    value={editVehicle.max_volume_m3 || ""}
+                    onChange={(e) =>
+                      setEditVehicle((p) => ({
+                        ...p,
+                        max_volume_m3: parseFloat(e.target.value) || 0,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="stg-field" style={{ gridColumn: "1 / -1" }}>
+                  <div
+                    style={{
+                      padding: "14px 16px",
+                      background: "rgba(14,165,233,0.04)",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid rgba(14,165,233,0.12)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        color: "#0ea5e9",
+                        marginBottom: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <Truck size={14} /> Cargo Area Dimensions (cm)
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr 1fr",
+                        gap: 12,
+                      }}
+                    >
+                      <div>
+                        <label className="label" style={{ fontSize: "11px" }}>
+                          Length
+                        </label>
+                        <input
+                          className="input"
+                          type="number"
+                          value={editVehicle.length_cm || ""}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setEditVehicle((p) => ({
+                              ...p,
+                              length_cm: val,
+                              max_volume_m3:
+                                val > 0 && p.width_cm > 0 && p.height_cm > 0
+                                  ? parseFloat(
+                                      (
+                                        (val * p.width_cm * p.height_cm) /
+                                        1e6
+                                      ).toFixed(1),
+                                    )
+                                  : p.max_volume_m3,
+                            }));
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="label" style={{ fontSize: "11px" }}>
+                          Width
+                        </label>
+                        <input
+                          className="input"
+                          type="number"
+                          value={editVehicle.width_cm || ""}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setEditVehicle((p) => ({
+                              ...p,
+                              width_cm: val,
+                              max_volume_m3:
+                                p.length_cm > 0 && val > 0 && p.height_cm > 0
+                                  ? parseFloat(
+                                      (
+                                        (p.length_cm * val * p.height_cm) /
+                                        1e6
+                                      ).toFixed(1),
+                                    )
+                                  : p.max_volume_m3,
+                            }));
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="label" style={{ fontSize: "11px" }}>
+                          Height
+                        </label>
+                        <input
+                          className="input"
+                          type="number"
+                          value={editVehicle.height_cm || ""}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setEditVehicle((p) => ({
+                              ...p,
+                              height_cm: val,
+                              max_volume_m3:
+                                p.length_cm > 0 && p.width_cm > 0 && val > 0
+                                  ? parseFloat(
+                                      (
+                                        (p.length_cm * p.width_cm * val) /
+                                        1e6
+                                      ).toFixed(1),
+                                    )
+                                  : p.max_volume_m3,
+                            }));
+                          }}
+                        />
+                      </div>
+                    </div>
+                    {editVehicle.length_cm > 0 &&
+                      editVehicle.width_cm > 0 &&
+                      editVehicle.height_cm > 0 && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontSize: "11px",
+                            color: "var(--text-secondary)",
+                            textAlign: "center",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {editVehicle.length_cm} x {editVehicle.width_cm} x{" "}
+                          {editVehicle.height_cm} cm ={" "}
+                          {(
+                            (editVehicle.length_cm *
+                              editVehicle.width_cm *
+                              editVehicle.height_cm) /
+                            1e6
+                          ).toFixed(1)}{" "}
+                          m³
+                        </div>
+                      )}
+                  </div>
+                </div>
+
+                <div className="stg-field">
+                  <label className="label">Cost per km (₹)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    value={editVehicle.cost_per_km || ""}
+                    onChange={(e) =>
+                      setEditVehicle((p) => ({
+                        ...p,
+                        cost_per_km: parseFloat(e.target.value) || 0,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="stg-field">
+                  <label className="label">
+                    Emission Factor (kg CO₂/ton-km)
+                  </label>
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.001"
+                    value={editVehicle.emission_factor || ""}
+                    onChange={(e) =>
+                      setEditVehicle((p) => ({
+                        ...p,
+                        emission_factor: parseFloat(e.target.value) || 0,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="stg-modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowEditVehicle(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSaveVehicle}
+                disabled={
+                  savingVehicle ||
+                  !editVehicle.name ||
+                  editVehicle.max_weight_kg <= 0
+                }
+              >
+                {savingVehicle ? (
+                  <>
+                    <div
+                      className="loading-spinner"
+                      style={{ width: 14, height: 14 }}
+                    />{" "}
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save size={14} /> Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Add Depot Modal ── */}
       {showAddDepot && (
         <div className="stg-overlay" onClick={() => setShowAddDepot(false)}>
           <div
             className="stg-modal animate-slide-up"
-            style={{ maxWidth: 480 }}
+            style={{ maxWidth: 560 }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="stg-modal-header">
@@ -1156,6 +1873,120 @@ export default function SettingsPage() {
               </button>
             </div>
             <div className="stg-modal-body">
+              {/* Quick city presets */}
+              <div
+                style={{
+                  marginBottom: 16,
+                  padding: "12px 16px",
+                  background: "rgba(16,185,129,0.04)",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid rgba(16,185,129,0.12)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "#10b981",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                    marginBottom: 8,
+                  }}
+                >
+                  📍 Quick Presets
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {[
+                    {
+                      label: "Mumbai",
+                      name: "Mumbai Central Hub",
+                      city: "Mumbai",
+                      lat: 19.076,
+                      lng: 72.8777,
+                    },
+                    {
+                      label: "Delhi",
+                      name: "Delhi NCR Hub",
+                      city: "New Delhi",
+                      lat: 28.6139,
+                      lng: 77.209,
+                    },
+                    {
+                      label: "Bengaluru",
+                      name: "Bengaluru Depot",
+                      city: "Bengaluru",
+                      lat: 12.9716,
+                      lng: 77.5946,
+                    },
+                    {
+                      label: "Chennai",
+                      name: "Chennai Port Hub",
+                      city: "Chennai",
+                      lat: 13.0827,
+                      lng: 80.2707,
+                    },
+                    {
+                      label: "Hyderabad",
+                      name: "Hyderabad Hub",
+                      city: "Hyderabad",
+                      lat: 17.385,
+                      lng: 78.4867,
+                    },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      className="btn btn-ghost btn-sm"
+                      style={{
+                        fontSize: "11px",
+                        padding: "4px 10px",
+                        border: "1px solid #e3e8ee",
+                      }}
+                      onClick={() =>
+                        setNewDepot({
+                          name: preset.name,
+                          city: preset.city,
+                          lat: preset.lat,
+                          lng: preset.lng,
+                        })
+                      }
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Validation warnings */}
+              {(() => {
+                const warnings: string[] = [];
+                if (!newDepot.name) warnings.push("Depot name is required");
+                if (!newDepot.city)
+                  warnings.push("City is required for geocoding");
+                if (newDepot.lat === 0 && newDepot.lng === 0)
+                  warnings.push(
+                    "Coordinates needed — use Auto-fetch or enter manually",
+                  );
+                return warnings.length > 0 ? (
+                  <div
+                    style={{
+                      marginBottom: 16,
+                      padding: "10px 14px",
+                      background: "rgba(245,158,11,0.06)",
+                      border: "1px solid rgba(245,158,11,0.15)",
+                      borderRadius: "var(--radius-md)",
+                      fontSize: "12px",
+                      color: "#D97706",
+                    }}
+                  >
+                    {warnings.map((w, i) => (
+                      <div key={i} style={{ marginBottom: 2 }}>
+                        ⚠ {w}
+                      </div>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+
               <div
                 style={{
                   display: "grid",
@@ -1164,7 +1995,7 @@ export default function SettingsPage() {
                 }}
               >
                 <div className="stg-field">
-                  <label className="label">Name</label>
+                  <label className="label">Depot Name</label>
                   <input
                     className="input"
                     placeholder="e.g. Mumbai Central Hub"
@@ -1185,35 +2016,144 @@ export default function SettingsPage() {
                     }
                   />
                 </div>
-                <div className="stg-field">
-                  <label className="label">Latitude</label>
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.0001"
-                    value={newDepot.lat}
-                    onChange={(e) =>
-                      setNewDepot((p) => ({
-                        ...p,
-                        lat: parseFloat(e.target.value) || 0,
-                      }))
-                    }
-                  />
+                <div className="stg-field" style={{ gridColumn: "1 / -1" }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{
+                      width: "100%",
+                      gap: 8,
+                      justifyContent: "center",
+                      padding: "10px 16px",
+                      background: "rgba(99,91,255,0.06)",
+                      border: "1px solid rgba(99,91,255,0.15)",
+                    }}
+                    disabled={isGeocoding || !newDepot.city}
+                    onClick={async () => {
+                      if (!newDepot.city) return;
+                      setIsGeocoding(true);
+                      try {
+                        const geo = await geocodeAddress(newDepot.city);
+                        if (geo) {
+                          setNewDepot((p) => ({
+                            ...p,
+                            lat: geo.lat,
+                            lng: geo.lng,
+                          }));
+                          showToastMsg(
+                            `Coordinates fetched for ${newDepot.city}`,
+                          );
+                        } else {
+                          showToastMsg(
+                            "Could not find coordinates for this city",
+                          );
+                        }
+                      } catch {
+                        showToastMsg(
+                          "Geocoding failed. Enter coordinates manually.",
+                        );
+                      } finally {
+                        setIsGeocoding(false);
+                      }
+                    }}
+                  >
+                    {isGeocoding ? (
+                      <>
+                        <div
+                          className="loading-spinner"
+                          style={{ width: 14, height: 14 }}
+                        />{" "}
+                        Fetching...
+                      </>
+                    ) : (
+                      <>
+                        <MapPin size={14} /> 🌍 Auto-fetch Coordinates from City
+                      </>
+                    )}
+                  </button>
                 </div>
-                <div className="stg-field">
-                  <label className="label">Longitude</label>
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.0001"
-                    value={newDepot.lng}
-                    onChange={(e) =>
-                      setNewDepot((p) => ({
-                        ...p,
-                        lng: parseFloat(e.target.value) || 0,
-                      }))
-                    }
-                  />
+
+                {/* Coordinates section */}
+                <div className="stg-field" style={{ gridColumn: "1 / -1" }}>
+                  <div
+                    style={{
+                      padding: "14px 16px",
+                      background: "rgba(14,165,233,0.04)",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid rgba(14,165,233,0.12)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        color: "#0ea5e9",
+                        marginBottom: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <MapPin size={14} /> GPS Coordinates
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 12,
+                      }}
+                    >
+                      <div>
+                        <label className="label" style={{ fontSize: "11px" }}>
+                          Latitude
+                        </label>
+                        <input
+                          className="input"
+                          type="number"
+                          step="0.0001"
+                          placeholder="e.g. 19.076"
+                          value={newDepot.lat || ""}
+                          onChange={(e) =>
+                            setNewDepot((p) => ({
+                              ...p,
+                              lat: parseFloat(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="label" style={{ fontSize: "11px" }}>
+                          Longitude
+                        </label>
+                        <input
+                          className="input"
+                          type="number"
+                          step="0.0001"
+                          placeholder="e.g. 72.877"
+                          value={newDepot.lng || ""}
+                          onChange={(e) =>
+                            setNewDepot((p) => ({
+                              ...p,
+                              lng: parseFloat(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                    {newDepot.lat !== 0 && newDepot.lng !== 0 && (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          fontSize: "11px",
+                          color: "var(--text-secondary)",
+                          textAlign: "center",
+                          fontWeight: 600,
+                        }}
+                      >
+                        📌 {newDepot.lat.toFixed(4)}° N,{" "}
+                        {newDepot.lng.toFixed(4)}° E
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

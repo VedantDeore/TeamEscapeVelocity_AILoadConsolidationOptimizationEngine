@@ -21,7 +21,9 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   } catch (error: any) {
     // Handle network errors (backend not running, CORS, etc.)
     if (error.name === "TypeError" && error.message.includes("fetch")) {
-      throw new Error("Cannot connect to backend server. Please ensure the Flask backend is running on http://localhost:5000");
+      throw new Error(
+        "Cannot connect to backend server. Please ensure the Flask backend is running on http://localhost:5000",
+      );
     }
     throw error;
   }
@@ -73,7 +75,9 @@ export async function uploadShipmentsCSV(file: File) {
     return res.json();
   } catch (error: any) {
     if (error.name === "TypeError" && error.message.includes("fetch")) {
-      throw new Error("Cannot connect to backend server. Please ensure the Flask backend is running on http://localhost:5000");
+      throw new Error(
+        "Cannot connect to backend server. Please ensure the Flask backend is running on http://localhost:5000",
+      );
     }
     throw error;
   }
@@ -188,6 +192,37 @@ export async function createDepot(data: any) {
   });
 }
 
+export async function updateDepot(id: string, data: any) {
+  return fetchApi<any>(`/api/depots/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteDepot(id: string) {
+  return fetchApi<any>(`/api/depots/${id}`, { method: "DELETE" });
+}
+
+export async function deleteVehicle(id: string) {
+  return fetchApi<any>(`/api/vehicles/${id}`, { method: "DELETE" });
+}
+
+export async function geocodeAddress(address: string) {
+  const qs = new URLSearchParams({ address }).toString();
+  return fetchApi<{ lat: number; lng: number; display_name: string }>(
+    `/api/geocode?${qs}`,
+  );
+}
+
+export async function checkReadiness() {
+  return fetchApi<{
+    ready: boolean;
+    issues: Array<{ type: string; field: string; message: string }>;
+    warnings: Array<{ type: string; field: string; message: string }>;
+    summary: { pending_shipments: number; vehicles: number; depots: number };
+  }>("/api/readiness");
+}
+
 export async function getCostParams() {
   return fetchApi<any>("/api/settings/costs");
 }
@@ -222,7 +257,10 @@ SHP-0003,Bangalore,Delhi,2100,8.5,250,180,200,critical,general,2026-03-07T10:00:
 // ---------------------------------------------------------------------------
 // Health Check
 // ---------------------------------------------------------------------------
-export async function checkHealth(): Promise<{ status: string; service: string }> {
+export async function checkHealth(): Promise<{
+  status: string;
+  service: string;
+}> {
   return fetchApi("/api/health");
 }
 
@@ -353,10 +391,17 @@ function maxFace(it: ClientPackingItem): number {
 // ---------------------------------------------------------------------------
 // Extreme-Point 3D bin-packing engine (single trial)
 // ---------------------------------------------------------------------------
-interface EP { x: number; y: number; z: number }
+interface EP {
+  x: number;
+  y: number;
+  z: number;
+}
 
 function epPack(
-  cw: number, ch: number, cd: number, maxW: number,
+  cw: number,
+  ch: number,
+  cd: number,
+  maxW: number,
   orderedItems: ClientPackingItem[],
 ): { placed: PlacedItem[]; totalVol: number; totalWeight: number } {
   const eps: EP[] = [{ x: 0, y: 0, z: 0 }];
@@ -366,30 +411,48 @@ function epPack(
 
   /* AABB overlap check */
   const overlaps = (
-    ax: number, ay: number, az: number,
-    aw: number, ah: number, ad: number,
+    ax: number,
+    ay: number,
+    az: number,
+    aw: number,
+    ah: number,
+    ad: number,
   ): boolean => {
     for (const p of placed) {
       if (
-        ax < p.x + p.orientedWidth  - 0.5 && p.x < ax + aw - 0.5 &&
-        ay < p.y + p.orientedHeight - 0.5 && p.y < ay + ah - 0.5 &&
-        az < p.z + p.orientedDepth  - 0.5 && p.z < az + ad - 0.5
-      ) return true;
+        ax < p.x + p.orientedWidth - 0.5 &&
+        p.x < ax + aw - 0.5 &&
+        ay < p.y + p.orientedHeight - 0.5 &&
+        p.y < ay + ah - 0.5 &&
+        az < p.z + p.orientedDepth - 0.5 &&
+        p.z < az + ad - 0.5
+      )
+        return true;
     }
     return false;
   };
 
   /* fraction of bottom face resting on floor or other boxes */
   const supportRatio = (
-    ax: number, az: number, aw: number, ad: number, ay: number,
+    ax: number,
+    az: number,
+    aw: number,
+    ad: number,
+    ay: number,
   ): number => {
     if (ay < 1) return 1; // on the floor
     const area = aw * ad;
     let supported = 0;
     for (const p of placed) {
       if (Math.abs(p.y + p.orientedHeight - ay) < 1.5) {
-        const ox = Math.max(0, Math.min(ax + aw, p.x + p.orientedWidth) - Math.max(ax, p.x));
-        const oz = Math.max(0, Math.min(az + ad, p.z + p.orientedDepth) - Math.max(az, p.z));
+        const ox = Math.max(
+          0,
+          Math.min(ax + aw, p.x + p.orientedWidth) - Math.max(ax, p.x),
+        );
+        const oz = Math.max(
+          0,
+          Math.min(az + ad, p.z + p.orientedDepth) - Math.max(az, p.z),
+        );
         supported += ox * oz;
       }
     }
@@ -398,32 +461,61 @@ function epPack(
 
   /* contact surface area with walls + neighbouring boxes */
   const contactArea = (
-    ax: number, ay: number, az: number,
-    aw: number, ah: number, ad: number,
+    ax: number,
+    ay: number,
+    az: number,
+    aw: number,
+    ah: number,
+    ad: number,
   ): number => {
     let c = 0;
-    if (ay < 1)            c += aw * ad; // floor
-    if (ax < 1)            c += ah * ad; // left wall
-    if (ax + aw > cw - 1)  c += ah * ad; // right wall
-    if (az + ad > cd - 1)  c += aw * ah; // front wall (cab)
-    if (az < 1)            c += aw * ah; // back wall (rear)
+    if (ay < 1) c += aw * ad; // floor
+    if (ax < 1) c += ah * ad; // left wall
+    if (ax + aw > cw - 1) c += ah * ad; // right wall
+    if (az + ad > cd - 1) c += aw * ah; // front wall (cab)
+    if (az < 1) c += aw * ah; // back wall (rear)
     for (const p of placed) {
       // x-face contact
-      if (Math.abs(ax - (p.x + p.orientedWidth)) < 1.5 ||
-          Math.abs(p.x - (ax + aw)) < 1.5) {
-        c += Math.max(0, Math.min(ay + ah, p.y + p.orientedHeight) - Math.max(ay, p.y))
-           * Math.max(0, Math.min(az + ad, p.z + p.orientedDepth) - Math.max(az, p.z));
+      if (
+        Math.abs(ax - (p.x + p.orientedWidth)) < 1.5 ||
+        Math.abs(p.x - (ax + aw)) < 1.5
+      ) {
+        c +=
+          Math.max(
+            0,
+            Math.min(ay + ah, p.y + p.orientedHeight) - Math.max(ay, p.y),
+          ) *
+          Math.max(
+            0,
+            Math.min(az + ad, p.z + p.orientedDepth) - Math.max(az, p.z),
+          );
       }
       // z-face contact
-      if (Math.abs(az - (p.z + p.orientedDepth)) < 1.5 ||
-          Math.abs(p.z - (az + ad)) < 1.5) {
-        c += Math.max(0, Math.min(ax + aw, p.x + p.orientedWidth) - Math.max(ax, p.x))
-           * Math.max(0, Math.min(ay + ah, p.y + p.orientedHeight) - Math.max(ay, p.y));
+      if (
+        Math.abs(az - (p.z + p.orientedDepth)) < 1.5 ||
+        Math.abs(p.z - (az + ad)) < 1.5
+      ) {
+        c +=
+          Math.max(
+            0,
+            Math.min(ax + aw, p.x + p.orientedWidth) - Math.max(ax, p.x),
+          ) *
+          Math.max(
+            0,
+            Math.min(ay + ah, p.y + p.orientedHeight) - Math.max(ay, p.y),
+          );
       }
       // y-face contact (top of item below)
       if (Math.abs(ay - (p.y + p.orientedHeight)) < 1.5) {
-        c += Math.max(0, Math.min(ax + aw, p.x + p.orientedWidth) - Math.max(ax, p.x))
-           * Math.max(0, Math.min(az + ad, p.z + p.orientedDepth) - Math.max(az, p.z));
+        c +=
+          Math.max(
+            0,
+            Math.min(ax + aw, p.x + p.orientedWidth) - Math.max(ax, p.x),
+          ) *
+          Math.max(
+            0,
+            Math.min(az + ad, p.z + p.orientedDepth) - Math.max(az, p.z),
+          );
       }
     }
     return c;
@@ -459,7 +551,12 @@ function epPack(
 
     for (const ep of eps) {
       for (const [ow, oh, od] of orientations) {
-        if (ep.x + ow > cw + 0.5 || ep.y + oh > ch + 0.5 || ep.z + od > cd + 0.5) continue;
+        if (
+          ep.x + ow > cw + 0.5 ||
+          ep.y + oh > ch + 0.5 ||
+          ep.z + od > cd + 0.5
+        )
+          continue;
         if (overlaps(ep.x, ep.y, ep.z, ow, oh, od)) continue;
 
         const sup = supportRatio(ep.x, ep.z, ow, od, ep.y);
@@ -467,12 +564,12 @@ function epPack(
 
         const ca = contactArea(ep.x, ep.y, ep.z, ow, oh, od);
         const score =
-          -ep.y * 500       // strongly prefer lower positions
-          + ca * 1.0        // more contact = tighter fit
-          + sup * 300       // well-supported placement
-          - ep.x * 0.2      // slight left-preference
-          - ep.z * 0.1      // slight back-preference
-          - oh * 0.3;       // prefer laying items flat
+          -ep.y * 500 + // strongly prefer lower positions
+          ca * 1.0 + // more contact = tighter fit
+          sup * 300 - // well-supported placement
+          ep.x * 0.2 - // slight left-preference
+          ep.z * 0.1 - // slight back-preference
+          oh * 0.3; // prefer laying items flat
 
         if (score > bestScore) {
           bestScore = score;
@@ -486,8 +583,12 @@ function epPack(
       const [ow, oh, od] = bestDims;
       placed.push({
         ...item,
-        x: bestEP.x, y: bestEP.y, z: bestEP.z,
-        orientedWidth: ow, orientedHeight: oh, orientedDepth: od,
+        x: bestEP.x,
+        y: bestEP.y,
+        z: bestEP.z,
+        orientedWidth: ow,
+        orientedHeight: oh,
+        orientedDepth: od,
       });
       totalVol += ow * oh * od;
       totalWeight += item.weight;
@@ -517,10 +618,16 @@ function epPack(
         let inside = false;
         for (const p of placed) {
           if (
-            c.x >= p.x + 0.5 && c.x < p.x + p.orientedWidth - 0.5 &&
-            c.y >= p.y + 0.5 && c.y < p.y + p.orientedHeight - 0.5 &&
-            c.z >= p.z + 0.5 && c.z < p.z + p.orientedDepth - 0.5
-          ) { inside = true; break; }
+            c.x >= p.x + 0.5 &&
+            c.x < p.x + p.orientedWidth - 0.5 &&
+            c.y >= p.y + 0.5 &&
+            c.y < p.y + p.orientedHeight - 0.5 &&
+            c.z >= p.z + 0.5 &&
+            c.z < p.z + p.orientedDepth - 0.5
+          ) {
+            inside = true;
+            break;
+          }
         }
         if (!inside) eps.push(c);
       }
@@ -530,10 +637,16 @@ function epPack(
         const e = eps[i];
         for (const p of placed) {
           if (
-            e.x >= p.x + 0.5 && e.x < p.x + p.orientedWidth - 0.5 &&
-            e.y >= p.y + 0.5 && e.y < p.y + p.orientedHeight - 0.5 &&
-            e.z >= p.z + 0.5 && e.z < p.z + p.orientedDepth - 0.5
-          ) { eps.splice(i, 1); break; }
+            e.x >= p.x + 0.5 &&
+            e.x < p.x + p.orientedWidth - 0.5 &&
+            e.y >= p.y + 0.5 &&
+            e.y < p.y + p.orientedHeight - 0.5 &&
+            e.z >= p.z + 0.5 &&
+            e.z < p.z + p.orientedDepth - 0.5
+          ) {
+            eps.splice(i, 1);
+            break;
+          }
         }
       }
 
@@ -571,27 +684,31 @@ export function clientSidePack(
   const containerVol = CW * CH * CD;
 
   // 1. Keep only items that physically fit in at least one orientation
-  const fittable = items.filter(item => {
+  const fittable = items.filter((item) => {
     const d = [item.width, item.height, item.depth].sort((a, b) => a - b);
     const c = [CW, CH, CD].sort((a, b) => a - b);
     return d[0] <= c[0] + 0.5 && d[1] <= c[1] + 0.5 && d[2] <= c[2] + 0.5;
   });
 
   // 2. Six complementary sort strategies
-  const strategies: ((a: ClientPackingItem, b: ClientPackingItem) => number)[] = [
-    // volume ↓
-    (a, b) => itemVol(b) - itemVol(a),
-    // vol/weight ↓ (bulky-but-light items first)
-    (a, b) => (itemVol(b) / Math.max(b.weight, 1)) - (itemVol(a) / Math.max(a.weight, 1)),
-    // max face area ↓
-    (a, b) => maxFace(b) - maxFace(a),
-    // tallest dimension ↓
-    (a, b) => Math.max(b.width, b.height, b.depth) - Math.max(a.width, a.height, a.depth),
-    // lightest ↑ (pack many light items → high volume fill)
-    (a, b) => a.weight - b.weight,
-    // smallest volume ↑ (many small items fill gaps well)
-    (a, b) => itemVol(a) - itemVol(b),
-  ];
+  const strategies: ((a: ClientPackingItem, b: ClientPackingItem) => number)[] =
+    [
+      // volume ↓
+      (a, b) => itemVol(b) - itemVol(a),
+      // vol/weight ↓ (bulky-but-light items first)
+      (a, b) =>
+        itemVol(b) / Math.max(b.weight, 1) - itemVol(a) / Math.max(a.weight, 1),
+      // max face area ↓
+      (a, b) => maxFace(b) - maxFace(a),
+      // tallest dimension ↓
+      (a, b) =>
+        Math.max(b.width, b.height, b.depth) -
+        Math.max(a.width, a.height, a.depth),
+      // lightest ↑ (pack many light items → high volume fill)
+      (a, b) => a.weight - b.weight,
+      // smallest volume ↑ (many small items fill gaps well)
+      (a, b) => itemVol(a) - itemVol(b),
+    ];
 
   // 3. Run each strategy and keep the one with highest utilisation
   let best = { placed: [] as PlacedItem[], totalVol: 0, totalWeight: 0 };
@@ -601,8 +718,8 @@ export function clientSidePack(
     if (result.totalVol > best.totalVol) best = result;
   }
 
-  const placedIds = new Set(best.placed.map(p => p.id));
-  const unpacked = items.filter(it => !placedIds.has(it.id));
+  const placedIds = new Set(best.placed.map((p) => p.id));
+  const unpacked = items.filter((it) => !placedIds.has(it.id));
 
   // 4. Build animation steps
   const steps: any[] = [];
