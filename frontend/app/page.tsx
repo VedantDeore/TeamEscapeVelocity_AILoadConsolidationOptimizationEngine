@@ -18,6 +18,7 @@ import {
   Activity,
   CheckCircle2,
   MapPin,
+  Github,
 } from "lucide-react";
 import {
   AreaChart,
@@ -112,36 +113,43 @@ export default function DashboardPage() {
   );
 
   const [kpisData, setKpisData] = useState(mockDashboardKPIs);
-  const [trendData, setTrendData] = useState(mockUtilizationTrend);
+  const [trendData, setTrendData] = useState(
+    mockUtilizationTrend.map((d) => ({ ...d, date: d.day })),
+  );
   const [activityData, setActivityData] = useState(mockActivityFeed);
   const [readinessData, setReadinessData] = useState<{
     pending_shipments: number;
     vehicles: number;
     depots: number;
   } | null>(null);
-  const [costSavingsData, setCostSavingsData] = useState(
-    mockUtilizationTrend.map((d) => ({
-      date: d.day,
-      before: Math.round(d.cost),
-      after: Math.round(d.cost * 0.69),
-    })),
-  );
+  const [costSavingsData, setCostSavingsData] = useState<
+    { date: string; before: number; after: number }[]
+  >([]);
+  const [utilChange, setUtilChange] = useState(0);
+  const [opportunities, setOpportunities] = useState<
+    { city: string; shipment_count: number; potential_saving: number }[]
+  >([]);
 
   useEffect(() => {
     getDashboardData()
-      .then((data) => {
+      .then((data: any) => {
         if (data.kpis?.length) setKpisData(data.kpis);
         if (data.utilization_trend?.length) {
-          setTrendData(data.utilization_trend);
-          setCostSavingsData(
+          setTrendData(
             data.utilization_trend.map((d: any) => ({
-              date: d.day,
-              before: Math.round(d.cost),
-              after: Math.round(d.cost * 0.69),
+              ...d,
+              date: d.date || d.day,
             })),
           );
         }
+        if (data.cost_savings_trend?.length) {
+          setCostSavingsData(data.cost_savings_trend);
+        }
+        if (typeof data.util_change === "number") {
+          setUtilChange(data.util_change);
+        }
         if (data.activity_feed?.length) setActivityData(data.activity_feed);
+        if (data.opportunities?.length) setOpportunities(data.opportunities);
       })
       .catch(() => {
         // Fallback to mock data — already set
@@ -155,19 +163,32 @@ export default function DashboardPage() {
   }, []);
 
   // Build kpis array for rendering
-  const kpis = kpisData.map((kpi: any) => ({
-    icon: iconMap[kpi.icon] || Package,
-    label: kpi.label,
-    value:
-      kpi.suffix === "₹"
-        ? `₹${(kpi.value / 100000).toFixed(1)}L`
-        : kpi.suffix
-          ? `${kpi.value.toLocaleString("en-IN")}${kpi.suffix}`
-          : kpi.value.toLocaleString("en-IN"),
-    change: `${kpi.change > 0 ? "↑" : "↓"} ${Math.abs(kpi.change)}% ${kpi.change_label || kpi.changeLabel || ""}`,
-    pos: kpi.change >= 0,
-    accentColor: accentColorMap[kpi.icon] || "#635BFF",
-  }));
+  const kpis = kpisData.map((kpi: any) => {
+    let displayValue: string;
+    if (kpi.suffix === "₹") {
+      const v = kpi.value || 0;
+      if (v >= 100000) {
+        displayValue = `₹${(v / 100000).toFixed(1)}L`;
+      } else if (v > 0) {
+        displayValue = `₹${v.toLocaleString("en-IN")}`;
+      } else {
+        displayValue = "₹0";
+      }
+    } else if (kpi.suffix) {
+      displayValue = `${kpi.value.toLocaleString("en-IN")}${kpi.suffix}`;
+    } else {
+      displayValue = kpi.value.toLocaleString("en-IN");
+    }
+
+    return {
+      icon: iconMap[kpi.icon] || Package,
+      label: kpi.label,
+      value: displayValue,
+      change: `${kpi.change > 0 ? "↑" : "↓"} ${Math.abs(kpi.change)}% ${kpi.change_label || kpi.changeLabel || ""}`,
+      pos: kpi.change >= 0,
+      accentColor: accentColorMap[kpi.icon] || "#635BFF",
+    };
+  });
 
   return (
     <>
@@ -348,10 +369,18 @@ export default function DashboardPage() {
           {kpis.map((kpi) => {
             const Icon = kpi.icon;
             return (
-              <div key={kpi.label} className="kpi-card">
+              <div
+                key={kpi.label}
+                className="kpi-card"
+                style={{
+                  background: `linear-gradient(135deg, ${kpi.accentColor}08 0%, #ffffff 60%)`,
+                  boxShadow: `0 2px 12px ${kpi.accentColor}14, 0 1px 3px rgba(0,0,0,0.04)`,
+                  borderColor: `${kpi.accentColor}20`,
+                }}
+              >
                 <div
                   className="kpi-icon"
-                  style={{ background: `${kpi.accentColor}12` }}
+                  style={{ background: `${kpi.accentColor}14` }}
                 >
                   <Icon size={18} style={{ color: kpi.accentColor }} />
                 </div>
@@ -366,27 +395,38 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Alert Banner ── */}
-        <div
-          className="alert-banner alert-warning animate-slide-up"
-          style={{ marginBottom: "24px" }}
-        >
-          <AlertTriangle
-            size={18}
-            style={{ color: "#E5850B", flexShrink: 0 }}
-          />
-          <div>
-            <strong>12 shipments</strong> heading to Chennai tomorrow can be
-            merged — estimated savings:&nbsp;
-            <strong>₹24,000</strong>
+        {opportunities.length > 0 && (
+          <div
+            className="alert-banner alert-warning animate-slide-up"
+            style={{ marginBottom: "24px" }}
+          >
+            <AlertTriangle
+              size={18}
+              style={{ color: "#E5850B", flexShrink: 0 }}
+            />
+            <div>
+              <strong>{opportunities[0].shipment_count} shipments</strong>{" "}
+              heading to {opportunities[0].city} can be merged — estimated
+              savings:&nbsp;
+              <strong>
+                ₹{opportunities[0].potential_saving.toLocaleString("en-IN")}
+              </strong>
+              {opportunities.length > 1 && (
+                <span style={{ color: "#8792a2", fontSize: "13px" }}>
+                  {" "}
+                  (+{opportunities.length - 1} more routes)
+                </span>
+              )}
+            </div>
+            <div className="alert-actions">
+              <Link href="/consolidate">
+                <button className="btn btn-primary btn-sm">
+                  Consolidate Now <ArrowRight size={12} />
+                </button>
+              </Link>
+            </div>
           </div>
-          <div className="alert-actions">
-            <Link href="/consolidate">
-              <button className="btn btn-primary btn-sm">
-                Consolidate Now <ArrowRight size={12} />
-              </button>
-            </Link>
-          </div>
-        </div>
+        )}
 
         {/* ── Charts Row ── */}
         <div
@@ -406,12 +446,15 @@ export default function DashboardPage() {
                   Vehicle utilization over last 30 days
                 </div>
               </div>
-              <span
-                className="badge badge-success"
-                style={{ display: "flex", alignItems: "center", gap: "4px" }}
-              >
-                <ChevronUp size={11} /> +29%
-              </span>
+              {utilChange !== 0 && (
+                <span
+                  className={`badge ${utilChange >= 0 ? "badge-success" : "badge-danger"}`}
+                  style={{ display: "flex", alignItems: "center", gap: "4px" }}
+                >
+                  <ChevronUp size={11} /> {utilChange > 0 ? "+" : ""}
+                  {utilChange}%
+                </span>
+              )}
             </div>
             <div className="card-body" style={{ height: "220px" }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -468,37 +511,52 @@ export default function DashboardPage() {
               <span className="badge badge-primary">This month</span>
             </div>
             <div className="card-body" style={{ height: "220px" }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={costSavingsData} barGap={4}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f7" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "#8792a2", fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fill: "#8792a2", fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar
-                    dataKey="before"
-                    name="Before"
-                    fill="#E3E8EE"
-                    radius={[3, 3, 0, 0]}
-                    barSize={14}
-                  />
-                  <Bar
-                    dataKey="after"
-                    name="After"
-                    fill="#635BFF"
-                    radius={[3, 3, 0, 0]}
-                    barSize={14}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+              {costSavingsData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={costSavingsData} barGap={4}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f7" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fill: "#8792a2", fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: "#8792a2", fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar
+                      dataKey="before"
+                      name="Before"
+                      fill="#E3E8EE"
+                      radius={[3, 3, 0, 0]}
+                      barSize={14}
+                    />
+                    <Bar
+                      dataKey="after"
+                      name="After"
+                      fill="#635BFF"
+                      radius={[3, 3, 0, 0]}
+                      barSize={14}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: "100%",
+                    color: "#8792a2",
+                    fontSize: "13px",
+                  }}
+                >
+                  Run a consolidation to see cost savings
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -642,6 +700,84 @@ export default function DashboardPage() {
                 );
               })}
             </div>
+          </div>
+        </div>
+
+        {/* ── Team Section ── */}
+        <div style={{ marginTop: "32px" }}>
+          <div
+            className="card-title"
+            style={{ marginBottom: "16px", fontSize: "18px" }}
+          >
+            Meet the Team
+          </div>
+          <div className="team-grid">
+            {[
+              {
+                name: "Vedant Deore",
+                role: "Developer",
+                linkedin: "https://www.linkedin.com/in/vedantdeore/",
+                github: "https://github.com/vedantdeore",
+                image: "https://github.com/vedantdeore.png",
+                gradient: "team-gradient-cyan",
+              },
+              {
+                name: "Ritesh Sakhare",
+                role: "Developer",
+                linkedin:
+                  "https://www.linkedin.com/in/ritesh-sakhare-559342258/",
+                github: "https://github.com/sakhareritesh",
+                image: "https://github.com/sakhareritesh.png",
+                gradient: "team-gradient-orange",
+              },
+              {
+                name: "Samyak Raka",
+                role: "Developer",
+                linkedin: "https://www.linkedin.com/in/samyakraka/",
+                github: "https://github.com/samyakraka",
+                image: "https://github.com/samyakraka.png",
+                gradient: "team-gradient-purple",
+              },
+              {
+                name: "Satyajit Shinde",
+                role: "Developer",
+                linkedin: "https://www.linkedin.com/in/satyajitshinde/",
+                github: "https://github.com/Satyajit112",
+                image: "https://github.com/Satyajit112.png",
+                gradient: "team-gradient-green",
+              },
+            ].map((member) => (
+              <div key={member.name} className="team-card">
+                <div className="team-card-text">
+                  <img
+                    src={member.image}
+                    alt={member.name}
+                    className="team-card-avatar"
+                  />
+                  <div className="team-card-name">{member.name}</div>
+                  <div className="team-card-role">{member.role}</div>
+                  <div className="team-card-links">
+                    <a
+                      href={member.linkedin}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="team-card-link"
+                    >
+                      LinkedIn <ArrowRight size={13} />
+                    </a>
+                    <a
+                      href={member.github}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="team-card-link team-card-link-github"
+                    >
+                      <Github size={14} /> GitHub
+                    </a>
+                  </div>
+                </div>
+                <div className={`team-card-art ${member.gradient}`} />
+              </div>
+            ))}
           </div>
         </div>
       </div>

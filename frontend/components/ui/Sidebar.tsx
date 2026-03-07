@@ -1,47 +1,125 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, Package, Layers, Map, Box, FlaskConical,
-  Leaf, MessageSquare, FileText, Settings, Truck
-} from 'lucide-react';
+  LayoutDashboard,
+  Package,
+  Layers,
+  Map,
+  Box,
+  FlaskConical,
+  Leaf,
+  MessageSquare,
+  FileText,
+  Settings,
+  Truck,
+} from "lucide-react";
+import { getShipments } from "@/lib/api";
 
 const navSections = [
   {
-    label: 'Overview',
+    label: "Overview",
     items: [
-      { href: '/', icon: LayoutDashboard, label: 'Dashboard', badge: null, badgeAi: false },
+      {
+        href: "/",
+        icon: LayoutDashboard,
+        label: "Dashboard",
+        badge: null,
+        badgeAi: false,
+      },
     ],
   },
   {
-    label: 'Operations',
+    label: "Operations",
     items: [
-      { href: '/shipments',  icon: Package,      label: 'Shipments',    badge: '150', badgeAi: false },
-      { href: '/consolidate',icon: Layers,        label: 'Consolidation',badge: '7',   badgeAi: false },
-      { href: '/routes',     icon: Map,           label: 'Route Map',    badge: null,  badgeAi: false },
-      { href: '/packing',    icon: Box,           label: '3D Packing',   badge: null,  badgeAi: false },
+      {
+        href: "/shipments",
+        icon: Package,
+        label: "Shipments",
+        badge: "150",
+        badgeAi: false,
+      },
+      {
+        href: "/consolidate",
+        icon: Layers,
+        label: "Consolidation",
+        badge: "7",
+        badgeAi: false,
+      },
+      {
+        href: "/routes",
+        icon: Map,
+        label: "Route Map",
+        badge: null,
+        badgeAi: false,
+      },
+      {
+        href: "/packing",
+        icon: Box,
+        label: "3D Packing",
+        badge: null,
+        badgeAi: false,
+      },
     ],
   },
   {
-    label: 'Intelligence',
+    label: "Intelligence",
     items: [
-      { href: '/simulate', icon: FlaskConical, label: 'Simulator',     badge: null, badgeAi: false },
-      { href: '/carbon',   icon: Leaf,         label: 'Carbon Impact', badge: null, badgeAi: false },
-      { href: '/copilot',  icon: MessageSquare,label: 'AI Co-Pilot',   badge: 'AI', badgeAi: true  },
+      {
+        href: "/simulate",
+        icon: FlaskConical,
+        label: "Simulator",
+        badge: null,
+        badgeAi: false,
+      },
+      {
+        href: "/carbon",
+        icon: Leaf,
+        label: "Carbon Impact",
+        badge: null,
+        badgeAi: false,
+      },
+      {
+        href: "/copilot",
+        icon: MessageSquare,
+        label: "AI Co-Pilot",
+        badge: "AI",
+        badgeAi: true,
+      },
     ],
   },
   {
-    label: 'Management',
+    label: "Management",
     items: [
-      { href: '/reports',  icon: FileText, label: 'Reports',  badge: null, badgeAi: false },
-      { href: '/settings', icon: Settings, label: 'Settings', badge: null, badgeAi: false },
+      {
+        href: "/reports",
+        icon: FileText,
+        label: "Reports",
+        badge: null,
+        badgeAi: false,
+      },
+      {
+        href: "/settings",
+        icon: Settings,
+        label: "Settings",
+        badge: null,
+        badgeAi: false,
+      },
     ],
   },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [shipmentCount, setShipmentCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    getShipments()
+      .then((data) => setShipmentCount(Array.isArray(data) ? data.length : 0))
+      .catch(() => {});
+  }, []);
 
   return (
     <aside className="sidebar">
@@ -52,7 +130,7 @@ export default function Sidebar() {
             <Truck size={18} color="white" />
           </div>
           <div>
-            <div className="sidebar-logo-text">LORRI</div>
+            <div className="sidebar-logo-text">Logistics AI</div>
             <div className="sidebar-logo-sub">Load Optimization</div>
           </div>
         </div>
@@ -65,18 +143,27 @@ export default function Sidebar() {
             <div className="sidebar-section-label">{section.label}</div>
             {section.items.map((item) => {
               const Icon = item.icon;
-              const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+              const isActive =
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(item.href);
+              const badge =
+                item.href === "/shipments" && shipmentCount !== null
+                  ? String(shipmentCount)
+                  : item.badge;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`sidebar-link ${isActive ? 'active' : ''}`}
+                  className={`sidebar-link ${isActive ? "active" : ""}`}
                 >
                   <Icon className="icon" size={16} />
                   <span>{item.label}</span>
-                  {item.badge && (
-                    <span className={`sidebar-badge ${item.badgeAi ? 'ai-badge' : ''}`}>
-                      {item.badge}
+                  {badge && (
+                    <span
+                      className={`sidebar-badge ${item.badgeAi ? "ai-badge" : ""}`}
+                    >
+                      {badge}
                     </span>
                   )}
                 </Link>
@@ -90,7 +177,9 @@ export default function Sidebar() {
       <div className="sidebar-footer">
         <div className="sidebar-status-dot" />
         <div className="sidebar-footer-text">
-          <div style={{ color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>Engine Online</div>
+          <div style={{ color: "rgba(255,255,255,0.65)", fontWeight: 500 }}>
+            Engine Online
+          </div>
           <div>v1.0.0 · Team Escape Velocity</div>
         </div>
       </div>

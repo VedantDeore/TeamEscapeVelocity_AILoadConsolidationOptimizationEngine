@@ -81,7 +81,7 @@ export default function LeafletMap({
   selectedRoute,
   onSelectRoute,
   viewMode,
-  mapTheme = "dark",
+  mapTheme = "light",
 }: LeafletMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -503,7 +503,7 @@ export default function LeafletMap({
           border-color: rgba(0, 0, 0, 0.1) !important;
           backdrop-filter: blur(8px);
           transition: all 0.15s ease;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.08) !important;
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
         }
         .lorri-map-light .leaflet-control-zoom a:hover {
           background: rgba(255, 255, 255, 1) !important;
