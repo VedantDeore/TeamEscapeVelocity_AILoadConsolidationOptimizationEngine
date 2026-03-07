@@ -159,14 +159,51 @@ def carbon_metrics():
 
     try:
         plans = sb.table("consolidation_plans").select(
-            "co2_before, co2_after, total_clusters, trips_before, trips_after"
+            "id, co2_before, co2_after, total_clusters, total_shipments, trips_before, trips_after"
         ).order("created_at", desc=False).execute()
 
+        # Also fetch all clusters for accurate CO₂ from real route distances
+        all_plan_ids = [p["id"] for p in (plans.data or [])]
+        clusters_data = []
+        if all_plan_ids:
+            try:
+                cl = sb.table("clusters").select(
+                    "plan_id, estimated_co2, route_distance_km, total_weight"
+                ).in_("plan_id", all_plan_ids).execute()
+                clusters_data = cl.data or []
+            except Exception:
+                pass
+
+        # Group clusters by plan
+        clusters_by_plan = {}
+        for c in clusters_data:
+            pid = c.get("plan_id")
+            if pid not in clusters_by_plan:
+                clusters_by_plan[pid] = []
+            clusters_by_plan[pid].append(c)
+
         if plans.data:
-            # Sum CO₂ and trips across ALL runs
             for p in plans.data:
-                co2_b = p.get("co2_before", 0) or 0
-                co2_a = p.get("co2_after", 0)  or 0
+                pid = p["id"]
+                plan_clusters = clusters_by_plan.get(pid, [])
+
+                if plan_clusters:
+                    # Use real cluster data for accurate CO₂
+                    co2_a = sum(c.get("estimated_co2", 0) or 0 for c in plan_clusters)
+
+                    n_shipments = p.get("total_shipments", 0) or 0
+                    co2_b = 0
+                    for c in plan_clusters:
+                        dist = c.get("route_distance_km", 0) or 0
+                        weight = c.get("total_weight", 0) or 0
+                        shipment_share = max(n_shipments, len(plan_clusters))
+                        n_shp_cluster = max(shipment_share // len(plan_clusters), 1) if plan_clusters else 1
+                        avg_w = weight / max(n_shp_cluster, 1)
+                        co2_b += n_shp_cluster * dist * (avg_w / 1000.0) * 0.075 * 2.0
+                else:
+                    co2_b = p.get("co2_before", 0) or 0
+                    co2_a = p.get("co2_after", 0)  or 0
+
                 co2_before_total += co2_b
                 co2_after_total  += co2_a
                 co2_saved_total  += max(co2_b - co2_a, 0)
@@ -234,14 +271,61 @@ def carbon_per_run():
         "trips_before, trips_after, total_clusters, total_shipments"
     ).order("created_at", desc=False).execute()
 
+    all_plan_ids = [p["id"] for p in (plans.data or [])]
+
+    # Fetch clusters for ALL plans (for accurate per-run CO₂ and truck breakdown)
+    clusters_data = []
+    if all_plan_ids:
+        try:
+            # Fetch in batches if needed (Supabase IN clause)
+            cl = sb.table("clusters").select(
+                "plan_id, vehicle_name, estimated_co2, "
+                "route_distance_km, total_weight, utilization_pct, "
+                "total_volume"
+            ).in_("plan_id", all_plan_ids).execute()
+            clusters_data = cl.data or []
+        except Exception:
+            pass
+
+    # Group clusters by plan_id for per-run recomputation
+    clusters_by_plan = {}
+    for c in clusters_data:
+        pid = c.get("plan_id")
+        if pid not in clusters_by_plan:
+            clusters_by_plan[pid] = []
+        clusters_by_plan[pid].append(c)
+
     runs = []
     for i, p in enumerate(plans.data or []):
-        co2_b = p.get("co2_before", 0) or 0
-        co2_a = p.get("co2_after", 0)  or 0
-        saved  = max(co2_b - co2_a, 0)
+        pid = p["id"]
+        plan_clusters = clusters_by_plan.get(pid, [])
+
+        if plan_clusters:
+            # Recompute CO₂ from actual cluster data (real route distances)
+            co2_a = sum(c.get("estimated_co2", 0) or 0 for c in plan_clusters)
+
+            # Recompute co2_before: each shipment solo in a medium truck
+            n_shipments = p.get("total_shipments", 0) or 0
+            co2_b = 0
+            for c in plan_clusters:
+                dist = c.get("route_distance_km", 0) or 0
+                weight = c.get("total_weight", 0) or 0
+                # Before: each unit of weight shipped solo at 2x emission
+                # Using medium truck factor (0.075) and 2.0 multiplier
+                # to match calculate_emissions logic
+                shipment_share = max(n_shipments, len(plan_clusters))
+                n_shp_cluster = max(shipment_share // len(plan_clusters), 1) if plan_clusters else 1
+                avg_w = weight / max(n_shp_cluster, 1)
+                co2_b += n_shp_cluster * dist * (avg_w / 1000.0) * 0.075 * 2.0
+        else:
+            # Fallback to plan-stored estimates
+            co2_b = p.get("co2_before", 0) or 0
+            co2_a = p.get("co2_after", 0) or 0
+
+        saved = max(co2_b - co2_a, 0)
         runs.append({
             "run":             i + 1,
-            "plan_id":         p["id"],
+            "plan_id":         pid,
             "name":            p.get("name", f"Run {i+1}"),
             "created_at":      p.get("created_at"),
             "co2_before":      round(co2_b, 2),
@@ -252,19 +336,6 @@ def carbon_per_run():
             "total_clusters":  p.get("total_clusters", 0) or 0,
             "total_shipments": p.get("total_shipments", 0) or 0,
         })
-
-    # Fetch clusters for per-truck breakdown (from latest 5 plans)
-    latest_ids = [r["plan_id"] for r in runs[-5:]] if runs else []
-    clusters_data = []
-    if latest_ids:
-        try:
-            cl = sb.table("clusters").select(
-                "plan_id, vehicle_name, estimated_co2, "
-                "route_distance_km, total_weight, utilization_pct"
-            ).in_("plan_id", latest_ids).execute()
-            clusters_data = cl.data or []
-        except Exception:
-            pass
 
     return jsonify({
         "runs":     runs,

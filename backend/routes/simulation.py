@@ -1,11 +1,40 @@
-"""Scenario simulation routes — wired to real scenario engine."""
+"""
+Scenario Simulation Routes
+===========================
+
+Endpoints:
+  GET  /api/scenarios              — List seeded scenarios
+  POST /api/simulate               — Run 3-scenario comparison on pending shipments
+  GET  /api/simulate/compare       — Return pre-seeded scenario comparison
+  POST /api/simulation/run         — Run a single packing simulation scenario
+  GET  /api/simulation/demo        — Run demo simulation with sample data
+  POST /api/simulation/compare-scenarios — Compare multiple packing scenarios
+"""
 
 from flask import Blueprint, request, jsonify
 from models.supabase_client import get_supabase
 from services.scenario import run_scenarios
+from services.bin_packing import (
+    pack_items,
+    create_items_from_shipments,
+    create_container_from_vehicle,
+    greedy_pack,
+)
+from services.scenario import (
+    run_scenario,
+    compare_scenarios,
+    generate_demo_scenario_data,
+)
+import logging
+
+logger = logging.getLogger(__name__)
 
 simulation_bp = Blueprint("simulation", __name__)
 
+
+# ══════════════════════════════════════════════════════════════════════════
+# Scenario Engine Routes (real data from DB)
+# ══════════════════════════════════════════════════════════════════════════
 
 @simulation_bp.route("/api/scenarios", methods=["GET"])
 def list_scenarios():
@@ -15,7 +44,7 @@ def list_scenarios():
 
 
 @simulation_bp.route("/api/simulate", methods=["POST"])
-def run_simulation():
+def run_simulation_scenario():
     """
     Run 3-scenario comparison on current pending shipments.
 
@@ -63,38 +92,14 @@ def compare_seeded():
     sb     = get_supabase()
     result = sb.table("scenarios").select("*").execute()
     return jsonify({"scenarios": result.data, "best": "AI Optimised"})
-"""
-Scenario Simulation API Routes
-===============================
-
-Endpoints:
-  POST /api/simulation/run            — Run a packing simulation scenario
-  GET  /api/simulation/demo            — Run demo simulation with sample data
-  POST /api/simulation/compare-scenarios — Compare multiple scenarios
-"""
-
-from flask import Blueprint, jsonify, request
-from services.bin_packing import (
-    pack_items,
-    create_items_from_shipments,
-    create_container_from_vehicle,
-    greedy_pack,
-)
-from services.scenario import (
-    run_scenario,
-    compare_scenarios,
-    generate_demo_scenario_data,
-)
-import logging
-
-logger = logging.getLogger(__name__)
-
-simulation_bp = Blueprint("simulation", __name__, url_prefix="/api/simulation")
 
 
-# ── POST /api/simulation/run ──────────────────────────────────────────────
-@simulation_bp.route("/run", methods=["POST"])
-def run_simulation():
+# ══════════════════════════════════════════════════════════════════════════
+# Packing Simulation Routes
+# ══════════════════════════════════════════════════════════════════════════
+
+@simulation_bp.route("/api/simulation/run", methods=["POST"])
+def run_packing_simulation():
     """
     Run a single packing simulation scenario.
 
@@ -116,12 +121,11 @@ def run_simulation():
         return jsonify(result)
 
     except Exception as e:
-        logger.exception("Error in run_simulation")
+        logger.exception("Error in run_packing_simulation")
         return jsonify({"error": str(e)}), 500
 
 
-# ── GET /api/simulation/demo ──────────────────────────────────────────────
-@simulation_bp.route("/demo", methods=["GET"])
+@simulation_bp.route("/api/simulation/demo", methods=["GET"])
 def demo_simulation():
     """
     Run a demo simulation comparing no-consolidation, greedy, and AI-optimized.
@@ -139,8 +143,7 @@ def demo_simulation():
         return jsonify({"error": str(e)}), 500
 
 
-# ── POST /api/simulation/compare-scenarios ────────────────────────────────
-@simulation_bp.route("/compare-scenarios", methods=["POST"])
+@simulation_bp.route("/api/simulation/compare-scenarios", methods=["POST"])
 def compare():
     """
     Compare multiple packing scenarios.
