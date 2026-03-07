@@ -80,3 +80,5 @@ yarn-error.log*
 
 # PEM keys
 *.pem
+implementation_plan.md.resolved
+implementation_plan.md
