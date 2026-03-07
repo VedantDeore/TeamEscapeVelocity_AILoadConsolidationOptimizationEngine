@@ -26,11 +26,12 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { mockConsolidationPlan, type Cluster } from "@/lib/mock-data";
+import { type Cluster, type ConsolidationPlan } from "@/lib/mock-data";
 import {
   getLatestPlan,
   runConsolidation,
   submitClusterFeedback,
+  getVehicles,
 } from "@/lib/api";
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -59,49 +60,101 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
+// Empty plan structure
+const emptyPlan: ConsolidationPlan = {
+  id: "",
+  name: "",
+  status: "draft",
+  totalShipments: 0,
+  totalClusters: 0,
+  avgUtilization: 0,
+  totalCostBefore: 0,
+  totalCostAfter: 0,
+  co2Before: 0,
+  co2After: 0,
+  tripsBefore: 0,
+  tripsAfter: 0,
+  createdAt: "",
+  clusters: [],
+};
+
 export default function ConsolidationPage() {
-  const [plan, setPlan] = useState(mockConsolidationPlan);
+  const [plan, setPlan] = useState<ConsolidationPlan>(emptyPlan);
   const [isRunning, setIsRunning] = useState(false);
-  const [showResults, setShowResults] = useState(true);
+  const [showResults, setShowResults] = useState(false);
   const [expandedCluster, setExpandedCluster] = useState<string | null>(null);
   const [clusterStatuses, setClusterStatuses] = useState<
     Record<string, string>
   >({});
+  const [vehiclesMap, setVehiclesMap] = useState<
+    Record<string, { max_weight_kg: number; name: string }>
+  >({});
 
-  useEffect(() => {
-    getLatestPlan()
+  const fetchVehiclesMap = () => {
+    getVehicles()
       .then((data) => {
-        if (data && data.clusters) {
-          const mapped = {
-            ...data,
-            totalShipments: data.total_shipments,
-            totalClusters: data.total_clusters,
-            avgUtilization: data.avg_utilization,
-            totalCostBefore: data.total_cost_before,
-            totalCostAfter: data.total_cost_after,
-            co2Before: data.co2_before,
-            co2After: data.co2_after,
-            tripsBefore: data.trips_before,
-            tripsAfter: data.trips_after,
-            createdAt: data.created_at,
-            clusters: data.clusters.map((c: any) => ({
-              ...c,
-              planId: c.plan_id,
-              vehicleId: c.vehicle_id,
-              vehicleName: c.vehicle_name,
-              shipmentIds: c.shipment_ids || [],
-              utilizationPct: c.utilization_pct,
-              totalWeight: c.total_weight,
-              totalVolume: c.total_volume,
-              routeDistanceKm: c.route_distance_km,
-              estimatedCost: c.estimated_cost,
-              estimatedCo2: c.estimated_co2,
-            })),
-          };
-          setPlan(mapped);
+        if (data?.length) {
+          const map: Record<string, { max_weight_kg: number; name: string }> = {};
+          data.forEach((v: any) => {
+            map[v.id] = { max_weight_kg: v.max_weight_kg ?? 0, name: v.name };
+          });
+          setVehiclesMap(map);
         }
       })
       .catch(() => {});
+  };
+
+  const loadLatestPlan = () => {
+    getLatestPlan()
+      .then((data) => {
+        if (data && data.clusters && data.clusters.length > 0) {
+          const mapped: ConsolidationPlan = {
+            id: data.id || "",
+            name: data.name || "Latest Consolidation Plan",
+            status: data.status || "active",
+            totalShipments: data.total_shipments || 0,
+            totalClusters: data.total_clusters || 0,
+            avgUtilization: data.avg_utilization || 0,
+            totalCostBefore: data.total_cost_before || 0,
+            totalCostAfter: data.total_cost_after || 0,
+            co2Before: data.co2_before || 0,
+            co2After: data.co2_after || 0,
+            tripsBefore: data.trips_before || 0,
+            tripsAfter: data.trips_after || 0,
+            createdAt: data.created_at || "",
+            clusters: data.clusters.map((c: any) => ({
+              id: c.id,
+              planId: c.plan_id,
+              vehicleId: c.vehicle_id,
+              vehicleName: c.vehicle_name || vehiclesMap[c.vehicle_id]?.name || "Unknown Truck",
+              shipmentIds: c.shipment_ids || [],
+              utilizationPct: c.utilization_pct || 0,
+              totalWeight: c.total_weight || 0,
+              totalVolume: c.total_volume || 0,
+              routeDistanceKm: c.route_distance_km || 0,
+              estimatedCost: c.estimated_cost || 0,
+              estimatedCo2: c.estimated_co2 || 0,
+              status: c.status || "pending",
+            })),
+          };
+          setPlan(mapped);
+          setShowResults(true);
+        } else {
+          // No consolidation plan exists - show empty state
+          setPlan(emptyPlan);
+          setShowResults(false);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load consolidation plan:", err);
+        setPlan(emptyPlan);
+        setShowResults(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchVehiclesMap();
+    loadLatestPlan();
   }, []);
 
   const handleRunConsolidation = () => {
@@ -109,40 +162,52 @@ export default function ConsolidationPage() {
     setShowResults(false);
     runConsolidation()
       .then((data) => {
-        if (data && data.clusters) {
-          const mapped = {
-            ...data,
-            totalShipments: data.total_shipments,
-            totalClusters: data.total_clusters,
-            avgUtilization: data.avg_utilization,
-            totalCostBefore: data.total_cost_before,
-            totalCostAfter: data.total_cost_after,
-            co2Before: data.co2_before,
-            co2After: data.co2_after,
-            tripsBefore: data.trips_before,
-            tripsAfter: data.trips_after,
-            createdAt: data.created_at,
+        if (data && data.clusters && data.clusters.length > 0) {
+          const mapped: ConsolidationPlan = {
+            id: data.id || data.plan_id || "",
+            name: data.name || "New Consolidation Plan",
+            status: "active",
+            totalShipments: data.total_shipments || 0,
+            totalClusters: data.total_clusters || 0,
+            avgUtilization: data.avg_utilization || 0,
+            totalCostBefore: data.total_cost_before || 0,
+            totalCostAfter: data.total_cost_after || 0,
+            co2Before: data.co2_before || 0,
+            co2After: data.co2_after || 0,
+            tripsBefore: data.trips_before || 0,
+            tripsAfter: data.trips_after || 0,
+            createdAt: data.created_at || new Date().toISOString(),
             clusters: data.clusters.map((c: any) => ({
-              ...c,
-              planId: c.plan_id,
+              id: c.id,
+              planId: c.plan_id || data.plan_id || "",
               vehicleId: c.vehicle_id,
-              vehicleName: c.vehicle_name,
+              vehicleName: c.vehicle_name || vehiclesMap[c.vehicle_id]?.name || "Unknown Truck",
               shipmentIds: c.shipment_ids || [],
-              utilizationPct: c.utilization_pct,
-              totalWeight: c.total_weight,
-              totalVolume: c.total_volume,
-              routeDistanceKm: c.route_distance_km,
-              estimatedCost: c.estimated_cost,
-              estimatedCo2: c.estimated_co2,
+              utilizationPct: c.utilization_pct || 0,
+              totalWeight: c.total_weight || 0,
+              totalVolume: c.total_volume || 0,
+              routeDistanceKm: c.route_distance_km || 0,
+              estimatedCost: c.estimated_cost || 0,
+              estimatedCo2: c.estimated_co2 || 0,
+              status: c.status || "pending",
             })),
           };
           setPlan(mapped);
+          setShowResults(true);
+          // Refresh vehicles map in case new vehicles were added
+          fetchVehiclesMap();
+        } else {
+          setPlan(emptyPlan);
+          setShowResults(false);
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error("Failed to run consolidation:", err);
+        setPlan(emptyPlan);
+        setShowResults(false);
+      })
       .finally(() => {
         setIsRunning(false);
-        setShowResults(true);
       });
   };
 
@@ -612,14 +677,37 @@ export default function ConsolidationPage() {
               </div>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
-                gap: "14px",
-              }}
-            >
-              {plan.clusters.map((cluster) => {
+            {!showResults || plan.clusters.length === 0 ? (
+              <div className="card" style={{ textAlign: "center", padding: "60px 20px" }}>
+                <div style={{ fontSize: "48px", marginBottom: "16px" }}>📦</div>
+                <h3 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "8px", color: "var(--text-primary)" }}>
+                  No Consolidation Plan Found
+                </h3>
+                <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "24px" }}>
+                  {isRunning
+                    ? "Processing shipments and creating consolidation plan..."
+                    : "Run consolidation to create clusters from your pending shipments."}
+                </p>
+                {!isRunning && (
+                  <button
+                    onClick={handleRunConsolidation}
+                    className="btn btn-primary"
+                    style={{ minWidth: "200px" }}
+                  >
+                    <Zap size={16} style={{ marginRight: "8px" }} />
+                    Run Consolidation
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+                  gap: "14px",
+                }}
+              >
+                {plan.clusters.map((cluster) => {
                 const status = clusterStatuses[cluster.id] || cluster.status;
                 const isExpanded = expandedCluster === cluster.id;
                 const utilColor = getUtilColor(cluster.utilizationPct);
@@ -682,15 +770,17 @@ export default function ConsolidationPage() {
                           </div>
                           <div
                             style={{
-                              fontSize: "12px",
-                              color: "var(--text-secondary)",
-                              marginTop: "3px",
+                              fontSize: "13px",
+                              fontWeight: 600,
+                              color: "var(--lorri-primary)",
+                              marginTop: "4px",
                               display: "flex",
                               alignItems: "center",
-                              gap: "4px",
+                              gap: "6px",
                             }}
                           >
-                            <Truck size={12} /> {cluster.vehicleName}
+                            <Truck size={14} style={{ color: "var(--lorri-primary)" }} />
+                            <span>{cluster.vehicleName || vehiclesMap[cluster.vehicleId]?.name || "Unknown Truck"}</span>
                           </div>
                         </div>
                         <span
@@ -889,7 +979,8 @@ export default function ConsolidationPage() {
                   </div>
                 );
               })}
-            </div>
+              </div>
+            )}
           </div>
         )}
       </div>

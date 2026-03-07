@@ -1,0 +1,121 @@
+"""
+Lorri — Delete All Mock Vehicles from Database (including those in clusters)
+Run: python delete_all_mock_vehicles.py
+WARNING: This will delete vehicles even if they are assigned to clusters.
+"""
+
+import os
+from dotenv import load_dotenv
+from supabase import create_client
+
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Mock vehicle names to remove
+MOCK_VEHICLE_NAMES = [
+    "Tata 407",
+    "Eicher 10.59",
+    "Ashok Leyland 1612",
+    "Tata Prima 4028",
+    "BharatBenz 2823",
+    "Mahindra Blazo 25",
+]
+
+
+def delete_all_mock_vehicles():
+    """Delete all mock vehicles from database, including those assigned to clusters."""
+    print("Deleting all mock vehicles from database...")
+    print("WARNING: This will delete vehicles even if they are assigned to clusters.")
+    print()
+    
+    removed_count = 0
+    skipped_count = 0
+    
+    for vehicle_name in MOCK_VEHICLE_NAMES:
+        try:
+            # Find vehicles by name
+            result = supabase.table("vehicles").select("id, name").ilike("name", f"%{vehicle_name}%").execute()
+            
+            if result.data:
+                for vehicle in result.data:
+                    vehicle_id = vehicle["id"]
+                    vehicle_name_found = vehicle["name"]
+                    
+                    # Check if vehicle is used in any clusters
+                    clusters_check = supabase.table("clusters").select("id").eq("vehicle_id", vehicle_id).limit(1).execute()
+                    
+                    if clusters_check.data:
+                        # Delete clusters first, then vehicle
+                        print(f"  [INFO] {vehicle_name_found} (ID: {vehicle_id}) is used in clusters. Deleting clusters first...")
+                        try:
+                            # Delete cluster_shipments first
+                            cluster_ids_result = supabase.table("clusters").select("id").eq("vehicle_id", vehicle_id).execute()
+                            cluster_ids = [c["id"] for c in cluster_ids_result.data]
+                            
+                            for cid in cluster_ids:
+                                try:
+                                    supabase.table("cluster_shipments").delete().eq("cluster_id", cid).execute()
+                                    supabase.table("routes").delete().eq("cluster_id", cid).execute()
+                                except Exception:
+                                    pass
+                            
+                            # Delete clusters
+                            supabase.table("clusters").delete().eq("vehicle_id", vehicle_id).execute()
+                            print(f"    [OK] Deleted {len(cluster_ids)} clusters")
+                        except Exception as e:
+                            print(f"    [WARN] Could not delete clusters: {e}")
+                    
+                    # Now delete the vehicle
+                    try:
+                        supabase.table("vehicles").delete().eq("id", vehicle_id).execute()
+                        print(f"  [OK] Deleted {vehicle_name_found} (ID: {vehicle_id})")
+                        removed_count += 1
+                    except Exception as e:
+                        print(f"  [ERROR] Could not delete {vehicle_name_found}: {e}")
+                        skipped_count += 1
+            else:
+                print(f"  [-] {vehicle_name} not found")
+        except Exception as e:
+            print(f"  [ERROR] Error processing {vehicle_name}: {e}")
+            skipped_count += 1
+    
+    print()
+    print("=" * 60)
+    print(f"SUMMARY:")
+    print(f"  Deleted: {removed_count} vehicles")
+    print(f"  Skipped/Errors: {skipped_count} vehicles")
+    print("=" * 60)
+    
+    return removed_count
+
+
+def main():
+    print("=" * 60)
+    print("LORRI — Delete All Mock Vehicles from Database")
+    print("=" * 60)
+    print(f"URL: {SUPABASE_URL}")
+    print()
+    
+    confirm = input("This will delete all mock vehicles and their associated clusters. Continue? (yes/no): ")
+    if confirm.lower() != "yes":
+        print("Cancelled.")
+        return
+    
+    print()
+    removed = delete_all_mock_vehicles()
+    
+    print()
+    print("=" * 60)
+    if removed > 0:
+        print(f"DONE! Deleted {removed} mock vehicles from database.")
+    else:
+        print("No vehicles were deleted.")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()

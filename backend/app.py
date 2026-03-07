@@ -20,9 +20,8 @@ from routes.copilot      import copilot_bp
 from routes.analytics    import analytics_bp
 from routes.reports      import reports_bp
 from routes.settings     import settings_bp
+from routes.corridor     import corridor_bp
 import logging
-from flask import Flask
-from flask_cors import CORS
 
 # Configure logging
 logging.basicConfig(
@@ -45,13 +44,7 @@ app.register_blueprint(copilot_bp)
 app.register_blueprint(analytics_bp)
 app.register_blueprint(reports_bp)
 app.register_blueprint(settings_bp)
-
-# ── Register Blueprints ───────────────────────────────────────────────────
-from routes.packing import packing_bp
-from routes.simulation import simulation_bp
-
-app.register_blueprint(packing_bp)
-app.register_blueprint(simulation_bp)
+app.register_blueprint(corridor_bp)
 
 
 @app.route("/api/health", methods=["GET"])

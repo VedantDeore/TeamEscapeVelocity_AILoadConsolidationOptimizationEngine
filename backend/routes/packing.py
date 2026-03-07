@@ -79,6 +79,9 @@ def recompute_packing(cluster_id):
             "updated":        True,
         })
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 """
 3D Bin Packing API Routes
 =========================
@@ -110,14 +113,42 @@ logger = logging.getLogger(__name__)
 packing_bp = Blueprint("packing", __name__, url_prefix="/api/packing")
 
 
-# ── Default vehicles (Indian truck fleet) ─────────────────────────────────
-DEFAULT_VEHICLES = [
-    {"id": "v1", "name": "Tata 407", "widthCm": 180, "heightCm": 180, "lengthCm": 430, "maxWeightKg": 2500, "costPerKm": 12, "emissionFactor": 0.09},
-    {"id": "v2", "name": "Eicher 10.59", "widthCm": 230, "heightCm": 200, "lengthCm": 600, "maxWeightKg": 7000, "costPerKm": 18, "emissionFactor": 0.075},
-    {"id": "v3", "name": "Ashok Leyland 1612", "widthCm": 240, "heightCm": 240, "lengthCm": 720, "maxWeightKg": 12000, "costPerKm": 24, "emissionFactor": 0.062},
-    {"id": "v4", "name": "Tata Prima 4028", "widthCm": 245, "heightCm": 270, "lengthCm": 1220, "maxWeightKg": 25000, "costPerKm": 32, "emissionFactor": 0.055},
-    {"id": "v5", "name": "BharatBenz 2823", "widthCm": 240, "heightCm": 250, "lengthCm": 900, "maxWeightKg": 18000, "costPerKm": 28, "emissionFactor": 0.058},
-]
+# ── Fallback vehicle (minimal, only if database is empty) ────────────────
+FALLBACK_VEHICLE = {
+    "id": "fallback",
+    "name": "Default Truck",
+    "widthCm": 240,
+    "heightCm": 240,
+    "lengthCm": 720,
+    "maxWeightKg": 12000,
+    "costPerKm": 24,
+    "emissionFactor": 0.062,
+}
+
+
+def _get_vehicles_from_db() -> list:
+    """Fetch vehicles from database, return empty list if none found."""
+    try:
+        sb = get_supabase()
+        result = sb.table("vehicles").select("*").eq("is_available", True).limit(10).execute()
+        if result.data:
+            # Convert to expected format
+            return [
+                {
+                    "id": v.get("id", ""),
+                    "name": v.get("name", ""),
+                    "widthCm": v.get("width_cm", 0),
+                    "heightCm": v.get("height_cm", 0),
+                    "lengthCm": v.get("length_cm", 0),
+                    "maxWeightKg": v.get("max_weight_kg", 0),
+                    "costPerKm": v.get("cost_per_km", 24),
+                    "emissionFactor": v.get("emission_factor", 0.062),
+                }
+                for v in result.data
+            ]
+    except Exception:
+        pass
+    return []
 
 
 def _generate_demo_items(count: int = 12) -> list[dict]:
@@ -160,8 +191,14 @@ def pack_single():
         if not data:
             return jsonify({"error": "Request body is required"}), 400
 
-        # Parse container
-        container_data = data.get("container", DEFAULT_VEHICLES[2])  # default: Ashok Leyland
+        # Parse container - fetch from DB if not provided
+        container_data = data.get("container")
+        if not container_data:
+            db_vehicles = _get_vehicles_from_db()
+            if db_vehicles:
+                container_data = db_vehicles[0]  # Use first available vehicle
+            else:
+                container_data = FALLBACK_VEHICLE
         container = create_container_from_vehicle(container_data)
 
         # Parse items
@@ -210,7 +247,11 @@ def pack_multi():
         if not data:
             return jsonify({"error": "Request body is required"}), 400
 
-        containers_data = data.get("containers", DEFAULT_VEHICLES)
+        containers_data = data.get("containers")
+        if not containers_data:
+            containers_data = _get_vehicles_from_db()
+            if not containers_data:
+                containers_data = [FALLBACK_VEHICLE]  # At least one container needed
         containers = [create_container_from_vehicle(c) for c in containers_data]
 
         items_data = data.get("items", [])
@@ -251,14 +292,39 @@ def pack_demo():
     """
     try:
         num_items = int(request.args.get("items", 12))
-        vehicle_id = request.args.get("vehicle", "v3")
+        vehicle_id = request.args.get("vehicle")
         algorithm = request.args.get("algorithm", "hybrid")
 
-        # Find vehicle
-        vehicle_data = next(
-            (v for v in DEFAULT_VEHICLES if v["id"] == vehicle_id),
-            DEFAULT_VEHICLES[2],
-        )
+        # Fetch vehicle from database or use fallback
+        vehicle_data = None
+        if vehicle_id:
+            # Try to fetch from database by ID
+            try:
+                sb = get_supabase()
+                result = sb.table("vehicles").select("*").eq("id", vehicle_id).eq("is_available", True).limit(1).execute()
+                if result.data:
+                    v = result.data[0]
+                    vehicle_data = {
+                        "id": v.get("id", ""),
+                        "name": v.get("name", ""),
+                        "widthCm": v.get("width_cm", 0),
+                        "heightCm": v.get("height_cm", 0),
+                        "lengthCm": v.get("length_cm", 0),
+                        "maxWeightKg": v.get("max_weight_kg", 0),
+                        "costPerKm": v.get("cost_per_km", 24),
+                        "emissionFactor": v.get("emission_factor", 0.062),
+                    }
+            except Exception:
+                pass
+        
+        # If not found, get first available from DB or use fallback
+        if not vehicle_data:
+            db_vehicles = _get_vehicles_from_db()
+            if db_vehicles:
+                vehicle_data = db_vehicles[0]
+            else:
+                vehicle_data = FALLBACK_VEHICLE
+        
         container = create_container_from_vehicle(vehicle_data)
 
         # Generate demo items
@@ -293,7 +359,13 @@ def compare_algorithms():
         if not data:
             return jsonify({"error": "Request body is required"}), 400
 
-        container_data = data.get("container", DEFAULT_VEHICLES[2])
+        container_data = data.get("container")
+        if not container_data:
+            db_vehicles = _get_vehicles_from_db()
+            if db_vehicles:
+                container_data = db_vehicles[0]
+            else:
+                container_data = FALLBACK_VEHICLE
         container = create_container_from_vehicle(container_data)
 
         items_data = data.get("items", _generate_demo_items(15))

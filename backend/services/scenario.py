@@ -7,6 +7,8 @@ Computes 3 side-by-side scenarios for any set of shipments:
   C — Custom            (user-supplied constraints)
 """
 
+from __future__ import annotations
+
 from services.clustering import cluster_shipments
 from services.carbon import calculate_emissions, calculate_single
 from geopy.distance import geodesic
@@ -179,20 +181,8 @@ def run_scenarios(shipments: list, constraints: dict | None = None) -> dict:
         "scenarios": [sc_a, sc_b, sc_c],
         "best":      "AI Optimised",
         "summary":   summary,
-Scenario Simulation Engine
-===========================
+    }
 
-Runs what-if scenarios comparing different packing strategies,
-vehicle assignments, and consolidation approaches.
-
-Features:
-  - Compare greedy vs SA vs hybrid algorithms
-  - Simulate no-consolidation baseline
-  - Compute cost, CO2, utilization metrics per scenario
-  - Generate demo comparison data
-"""
-
-from __future__ import annotations
 
 import random
 import logging
@@ -208,12 +198,40 @@ from services.bin_packing import (
 
 logger = logging.getLogger(__name__)
 
-# ── Default vehicle fleet ─────────────────────────────────────────────────
-DEFAULT_VEHICLES = [
-    {"id": "v1", "name": "Tata 407", "widthCm": 180, "heightCm": 180, "lengthCm": 430, "maxWeightKg": 2500, "costPerKm": 12, "emissionFactor": 0.09},
-    {"id": "v2", "name": "Eicher 10.59", "widthCm": 230, "heightCm": 200, "lengthCm": 600, "maxWeightKg": 7000, "costPerKm": 18, "emissionFactor": 0.075},
-    {"id": "v3", "name": "Ashok Leyland 1612", "widthCm": 240, "heightCm": 240, "lengthCm": 720, "maxWeightKg": 12000, "costPerKm": 24, "emissionFactor": 0.062},
-]
+# ── Fallback vehicle (minimal, only if database is empty) ────────────────
+FALLBACK_VEHICLE = {
+    "id": "fallback",
+    "name": "Default Truck",
+    "widthCm": 240,
+    "heightCm": 240,
+    "lengthCm": 720,
+    "maxWeightKg": 12000,
+    "costPerKm": 24,
+    "emissionFactor": 0.062,
+}
+
+
+def _get_vehicle_from_db() -> dict:
+    """Fetch first available vehicle from database, return fallback if none."""
+    try:
+        from models.supabase_client import get_supabase
+        sb = get_supabase()
+        result = sb.table("vehicles").select("*").eq("is_available", True).limit(1).execute()
+        if result.data and result.data[0]:
+            v = result.data[0]
+            return {
+                "id": v.get("id", ""),
+                "name": v.get("name", ""),
+                "widthCm": v.get("width_cm", 0),
+                "heightCm": v.get("height_cm", 0),
+                "lengthCm": v.get("length_cm", 0),
+                "maxWeightKg": v.get("max_weight_kg", 0),
+                "costPerKm": v.get("cost_per_km", 24),
+                "emissionFactor": v.get("emission_factor", 0.062),
+            }
+    except Exception:
+        pass
+    return FALLBACK_VEHICLE
 
 
 def _generate_items(count: int) -> list[dict]:
@@ -253,7 +271,9 @@ def run_scenario(scenario_config: dict) -> dict:
         Dict with packing result + computed logistics metrics.
     """
     name = scenario_config.get("name", "Unnamed")
-    container_data = scenario_config.get("container", DEFAULT_VEHICLES[2])
+    container_data = scenario_config.get("container")
+    if not container_data:
+        container_data = _get_vehicle_from_db()
     items_data = scenario_config.get("items", [])
     algorithm = scenario_config.get("algorithm", "hybrid")
     sa_iterations = int(scenario_config.get("sa_iterations", 500))
@@ -304,7 +324,9 @@ def compare_scenarios(config: dict) -> dict:
             ]
         }
     """
-    container_data = config.get("container", DEFAULT_VEHICLES[2])
+    container_data = config.get("container")
+    if not container_data:
+        container_data = _get_vehicle_from_db()
     items_data = config.get("items", [])
     scenarios = config.get("scenarios", [
         {"name": "Greedy (No Optimization)", "algorithm": "greedy"},
@@ -341,7 +363,7 @@ def generate_demo_scenario_data(num_items: int = 15) -> dict:
     Generate a full demo comparison: no consolidation vs greedy vs AI hybrid.
     """
     items_data = _generate_items(num_items)
-    container_data = DEFAULT_VEHICLES[2]  # Ashok Leyland 1612
+    container_data = _get_vehicle_from_db()
     container = create_container_from_vehicle(container_data)
     items = create_items_from_shipments(items_data)
 

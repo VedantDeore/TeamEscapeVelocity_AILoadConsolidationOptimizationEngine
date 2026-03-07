@@ -46,6 +46,15 @@ def _get_first_depot(sb) -> dict | None:
         return None
 
 
+def _get_all_vehicles(sb) -> list:
+    """Fetch all available vehicles from database."""
+    try:
+        result = sb.table("vehicles").select("*").eq("is_available", True).execute()
+        return result.data or []
+    except Exception:
+        return []
+
+
 # ── plan endpoints ─────────────────────────────────────────
 
 @consolidation_bp.route("/api/consolidate", methods=["GET"])
@@ -107,6 +116,11 @@ def run_consolidation():
     if not shipments:
         return jsonify({"error": "No pending shipments found to consolidate"}), 404
 
+    # --- 1.5. Fetch available vehicles from settings ---
+    vehicles = _get_all_vehicles(sb)
+    if not vehicles:
+        return jsonify({"error": "No available vehicles found in settings. Please add vehicles first."}), 400
+
     n_shipments_before = sb.table("shipments").select("id", count="exact").execute().count or len(shipments)
 
     # Before metrics: count unique trips if no consolidation
@@ -114,8 +128,8 @@ def run_consolidation():
     cost_before  = trips_before * 9500   # rough avg per-trip cost
     co2_before_estimate = trips_before * 18.0  # rough kg CO₂ per solo trip
 
-    # --- 2. DBSCAN clustering ---
-    clusters = cluster_shipments(shipments, constraints)
+    # --- 2. DBSCAN clustering with vehicles from database ---
+    clusters = cluster_shipments(shipments, constraints, vehicles)
 
     if not clusters:
         return jsonify({"error": "Clustering produced no groups"}), 500
@@ -164,14 +178,30 @@ def run_consolidation():
     # --- 6. Per-cluster: bin packing + VRP + persist ---
     for idx, c in enumerate(clusters):
         vname = c["vehicle"]["name"]
+        vehicle_id = c["vehicle"].get("id")
 
-        # Fetch vehicle from DB for full dimensions
-        db_vehicle = _get_vehicle_by_name(sb, vname) or {
-            "id": None,
-            "length_cm": 720, "width_cm": 240, "height_cm": 240,
-            "max_weight_kg": c["vehicle"]["max_weight"], "max_volume_m3": 42,
-            "cost_per_km": 24,
-        }
+        # Fetch vehicle from DB - prefer by ID if available, otherwise by name
+        db_vehicle = None
+        if vehicle_id:
+            try:
+                result = sb.table("vehicles").select("*").eq("id", vehicle_id).limit(1).execute()
+                db_vehicle = result.data[0] if result.data else None
+            except Exception:
+                pass
+        
+        if not db_vehicle:
+            db_vehicle = _get_vehicle_by_name(sb, vname)
+        
+        # Fallback to cluster vehicle data if DB lookup fails
+        if not db_vehicle:
+            db_vehicle = {
+                "id": vehicle_id,
+                "name": vname,
+                "length_cm": 720, "width_cm": 240, "height_cm": 240,
+                "max_weight_kg": c["vehicle"]["max_weight"], 
+                "max_volume_m3": c["vehicle"]["max_volume"],
+                "cost_per_km": c["vehicle"].get("cost_per_km", 24),
+            }
 
         # 3D bin packing
         packing = pack_cluster(c["shipments"], db_vehicle)

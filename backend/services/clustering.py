@@ -98,17 +98,57 @@ def _custom_distance(i: int, j: int, shipments: list) -> float:
     return ALPHA * geo + BETA * time + GAMMA * dest
 
 
-def _recommend_vehicle(total_weight: float, total_volume: float) -> dict:
-    """Pick the smallest vehicle that can fit the load."""
-    for v in VEHICLE_TYPES:
-        if v["max_weight"] >= total_weight and v["max_volume"] >= total_volume:
-            return v
-    return VEHICLE_TYPES[-1]   # largest as fallback
+def _recommend_vehicle(total_weight: float, total_volume: float, vehicles: list | None = None) -> dict:
+    """
+    Pick the smallest vehicle that can fit the load.
+    If vehicles list is provided (from database), use those; otherwise fallback to hardcoded types.
+    """
+    vehicle_list = vehicles if vehicles else VEHICLE_TYPES
+    
+    if not vehicle_list:
+        # Ultimate fallback
+        return {
+            "name": "Default Truck",
+            "type": "Heavy Truck",
+            "max_weight": 12000,
+            "max_volume": 42,
+            "cost_per_km": 24,
+        }
+    
+    # Sort vehicles by capacity (smallest first) to find best fit
+    sorted_vehicles = sorted(vehicle_list, key=lambda v: v.get("max_weight_kg", v.get("max_weight", 0)))
+    
+    # Find smallest vehicle that can fit the load
+    for v in sorted_vehicles:
+        max_weight = v.get("max_weight_kg", v.get("max_weight", 0))
+        max_volume = v.get("max_volume_m3", v.get("max_volume", 0))
+        
+        if max_weight >= total_weight and max_volume >= total_volume:
+            # Return in expected format
+            return {
+                "name": v.get("name", "Unknown Vehicle"),
+                "type": v.get("type", "Heavy Truck"),
+                "max_weight": max_weight,
+                "max_volume": max_volume,
+                "cost_per_km": v.get("cost_per_km", 24),
+                "id": v.get("id"),  # Include DB ID if available
+            }
+    
+    # If no vehicle fits, return largest available
+    largest = sorted_vehicles[-1]
+    return {
+        "name": largest.get("name", "Largest Available"),
+        "type": largest.get("type", "Heavy Truck"),
+        "max_weight": largest.get("max_weight_kg", largest.get("max_weight", 25000)),
+        "max_volume": largest.get("max_volume_m3", largest.get("max_volume", 70)),
+        "cost_per_km": largest.get("cost_per_km", 24),
+        "id": largest.get("id"),
+    }
 
 
 # ── main entry point ───────────────────────────────────────
 
-def cluster_shipments(shipments: list, constraints: dict | None = None) -> list:
+def cluster_shipments(shipments: list, constraints: dict | None = None, vehicles: list | None = None) -> list:
     """
     Cluster shipments using DBSCAN with a custom distance metric.
 
@@ -161,7 +201,7 @@ def cluster_shipments(shipments: list, constraints: dict | None = None) -> list:
         total_weight = sum(s.get("weight_kg", 0) for s in group_shipments)
         total_volume = sum(s.get("volume_m3", 0) for s in group_shipments)
 
-        vehicle = _recommend_vehicle(total_weight, total_volume)
+        vehicle = _recommend_vehicle(total_weight, total_volume, vehicles)
         util_pct = 0.0
         if vehicle["max_weight"] > 0:
             weight_util = total_weight / vehicle["max_weight"]

@@ -20,8 +20,8 @@ import {
   Check,
   Loader2,
 } from "lucide-react";
-import { mockShipments, type Shipment } from "@/lib/mock-data";
-import { getShipments, uploadShipmentsCSV, createShipment, getCities, downloadCSVTemplate } from "@/lib/api";
+import { type Shipment } from "@/lib/mock-data";
+import { getShipments, uploadShipmentsCSV, createShipment, getCities, downloadCSVTemplate, deleteShipment } from "@/lib/api";
 
 const priorityBadge: Record<string, string> = {
   normal: "badge-ghost",
@@ -47,38 +47,7 @@ export default function ShipmentsPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
 
   useEffect(() => {
-    getShipments()
-      .then((data) => {
-        if (data?.length) {
-          const mapped = data.map((s: any) => ({
-            id: s.id,
-            shipmentCode: s.shipment_code,
-            originCity: s.origin_city,
-            originLat: s.origin_lat,
-            originLng: s.origin_lng,
-            destCity: s.dest_city,
-            destLat: s.dest_lat,
-            destLng: s.dest_lng,
-            weightKg: s.weight_kg,
-            volumeM3: s.volume_m3,
-            lengthCm: s.length_cm,
-            widthCm: s.width_cm,
-            heightCm: s.height_cm,
-            deliveryWindowStart: s.delivery_window_start,
-            deliveryWindowEnd: s.delivery_window_end,
-            priority: s.priority,
-            cargoType: s.cargo_type,
-            status: s.status,
-            createdAt: s.created_at,
-          }));
-          setShipments(mapped);
-        } else {
-          setShipments(mockShipments);
-        }
-      })
-      .catch(() => {
-        setShipments(mockShipments);
-      });
+    refreshShipments();
   }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("all");
@@ -93,6 +62,7 @@ export default function ShipmentsPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [newShipment, setNewShipment] = useState({
     origin_city: "",
     dest_city: "",
@@ -125,35 +95,41 @@ export default function ShipmentsPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const refreshShipments = () => {
-    getShipments()
-      .then((data) => {
-        if (data?.length) {
-          const mapped = data.map((s: any) => ({
-            id: s.id,
-            shipmentCode: s.shipment_code,
-            originCity: s.origin_city,
-            originLat: s.origin_lat,
-            originLng: s.origin_lng,
-            destCity: s.dest_city,
-            destLat: s.dest_lat,
-            destLng: s.dest_lng,
-            weightKg: s.weight_kg,
-            volumeM3: s.volume_m3,
-            lengthCm: s.length_cm,
-            widthCm: s.width_cm,
-            heightCm: s.height_cm,
-            deliveryWindowStart: s.delivery_window_start,
-            deliveryWindowEnd: s.delivery_window_end,
-            priority: s.priority,
-            cargoType: s.cargo_type,
-            status: s.status,
-            createdAt: s.created_at,
-          }));
-          setShipments(mapped);
-        }
-      })
-      .catch(() => {});
+  const refreshShipments = async () => {
+    try {
+      const data = await getShipments();
+      if (data && Array.isArray(data)) {
+        const mapped = data.map((s: any) => ({
+          id: s.id,
+          shipmentCode: s.shipment_code,
+          originCity: s.origin_city,
+          originLat: s.origin_lat,
+          originLng: s.origin_lng,
+          destCity: s.dest_city,
+          destLat: s.dest_lat,
+          destLng: s.dest_lng,
+          weightKg: s.weight_kg,
+          volumeM3: s.volume_m3,
+          lengthCm: s.length_cm,
+          widthCm: s.width_cm,
+          heightCm: s.height_cm,
+          deliveryWindowStart: s.delivery_window_start,
+          deliveryWindowEnd: s.delivery_window_end,
+          priority: s.priority,
+          cargoType: s.cargo_type,
+          status: s.status,
+          createdAt: s.created_at,
+        }));
+        setShipments(mapped);
+      } else {
+        // No data from API - set empty array (not mock data)
+        setShipments([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch shipments:", err);
+      // On error, keep empty array - don't show mock data
+      setShipments([]);
+    }
   };
 
   const handleCsvUpload = async () => {
@@ -314,6 +290,60 @@ export default function ShipmentsPage() {
     else setSelectedIds(new Set(paged.map((s) => s.id)));
   };
 
+  const handleDelete = async () => {
+    if (selectedIds.size === 0) return;
+    
+    // Confirm deletion
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} shipment${selectedIds.size > 1 ? "s" : ""}? This action cannot be undone.`)) {
+      return;
+    }
+    
+    setIsDeleting(true);
+    const idsToDelete = Array.from(selectedIds);
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: string[] = [];
+
+    try {
+      // Delete all selected shipments sequentially to ensure each deletion completes
+      for (const id of idsToDelete) {
+        try {
+          const result = await deleteShipment(id);
+          if (result?.status === "deleted" || result?.id === id) {
+            successCount++;
+            // Also remove from local state immediately for better UX
+            setShipments((prev) => prev.filter((s) => s.id !== id));
+          } else {
+            errorCount++;
+            errors.push(`Shipment ${id}: Unknown error`);
+          }
+        } catch (err: any) {
+          errorCount++;
+          const errorMsg = err?.message || `Failed to delete shipment ${id}`;
+          errors.push(errorMsg);
+          console.error(`Failed to delete shipment ${id}:`, err);
+        }
+      }
+
+      if (successCount > 0) {
+        // Refresh the shipments list from server to ensure consistency
+        await refreshShipments();
+        showToast(
+          `Successfully deleted ${successCount} shipment${successCount > 1 ? "s" : ""}${errorCount > 0 ? ` (${errorCount} failed)` : ""}`,
+          errorCount > 0 ? "error" : "success"
+        );
+        // Clear selection
+        setSelectedIds(new Set());
+      } else {
+        showToast(`Failed to delete shipments. ${errors.join("; ")}`, "error");
+      }
+    } catch (err: any) {
+      showToast(err?.message || "An error occurred while deleting shipments.", "error");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Quick stats for the header
   const pending = shipments.filter((s) => s.status === "pending").length;
   const critical = shipments.filter((s) => s.priority === "critical").length;
@@ -447,8 +477,20 @@ export default function ShipmentsPage() {
               <span className="badge badge-primary">
                 {selectedIds.size} selected
               </span>
-              <button className="btn btn-sm btn-danger">
-                <Trash2 size={13} /> Delete
+              <button 
+                className="btn btn-sm btn-danger"
+                onClick={handleDelete}
+                disabled={isDeleting || selectedIds.size === 0}
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" /> Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={13} /> Delete
+                  </>
+                )}
               </button>
             </div>
           )}
