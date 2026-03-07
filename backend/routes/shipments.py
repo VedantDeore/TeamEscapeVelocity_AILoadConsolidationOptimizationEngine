@@ -3,6 +3,7 @@
 from flask import Blueprint, request, jsonify
 from models.supabase_client import get_supabase
 from utils.geocoding import geocode
+from datetime import datetime, timezone
 import csv
 import io
 import uuid
@@ -134,10 +135,66 @@ def create_shipment():
 def update_shipment(shipment_id):
     sb = get_supabase()
     data = request.get_json()
+    # Auto-track when status changes
+    if "status" in data:
+        data["status_changed_at"] = datetime.now(timezone.utc).isoformat()
     result = sb.table("shipments").update(data).eq("id", shipment_id).execute()
     if not result.data:
         return jsonify({"error": "Not found"}), 404
     return jsonify(result.data[0])
+
+
+@shipments_bp.route("/api/shipments/progress-status", methods=["POST"])
+def progress_status():
+    """
+    Auto-advance shipment statuses based on time since status_changed_at:
+      consolidated  → in_transit   after 1 hour
+      in_transit    → delivered    after 2 hours (i.e. 1 hour after in_transit)
+    """
+    sb = get_supabase()
+    now = datetime.now(timezone.utc)
+    updated = {"to_in_transit": 0, "to_delivered": 0}
+
+    try:
+        # Fetch consolidated shipments
+        consolidated = sb.table("shipments").select("id, status_changed_at").eq("status", "consolidated").execute()
+        for s in (consolidated.data or []):
+            changed_at = s.get("status_changed_at")
+            if not changed_at:
+                continue
+            try:
+                ts = datetime.fromisoformat(changed_at.replace("Z", "+00:00"))
+                elapsed_min = (now - ts).total_seconds() / 60
+                if elapsed_min >= 60:  # 1 hour → in_transit
+                    sb.table("shipments").update({
+                        "status": "in_transit",
+                        "status_changed_at": now.isoformat(),
+                    }).eq("id", s["id"]).execute()
+                    updated["to_in_transit"] += 1
+            except Exception:
+                pass
+
+        # Fetch in-transit shipments
+        in_transit = sb.table("shipments").select("id, status_changed_at").eq("status", "in_transit").execute()
+        for s in (in_transit.data or []):
+            changed_at = s.get("status_changed_at")
+            if not changed_at:
+                continue
+            try:
+                ts = datetime.fromisoformat(changed_at.replace("Z", "+00:00"))
+                elapsed_min = (now - ts).total_seconds() / 60
+                if elapsed_min >= 60:  # 1 hour after in_transit → delivered
+                    sb.table("shipments").update({
+                        "status": "delivered",
+                        "status_changed_at": now.isoformat(),
+                    }).eq("id", s["id"]).execute()
+                    updated["to_delivered"] += 1
+            except Exception:
+                pass
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify(updated)
 
 
 @shipments_bp.route("/api/shipments/<shipment_id>", methods=["DELETE"])

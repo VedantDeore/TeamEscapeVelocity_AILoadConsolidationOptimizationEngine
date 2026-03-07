@@ -176,26 +176,24 @@ def optimize_route(cluster_shipments: list, vehicle: dict,
     """
     Optimise the pickup/delivery route for a cluster.
 
-    Strategy — Sweep algorithm with pickup-before-delivery constraint:
-      1. Build per-shipment pickup & delivery stops (no merging).
-      2. Phase 1 (Pickups):  Starting from depot, visit ALL pickups
-         using nearest-neighbour.  Load increases at each pickup.
-      3. Phase 2 (Deliveries): Starting from the last pickup, visit
-         ALL deliveries using nearest-neighbour.  Load decreases.
-      4. Return to depot.
+    Strategy — Constraint-aware nearest-neighbour with pickup-before-delivery:
+      For each shipment, its delivery is only eligible AFTER its pickup is done.
+      At each step, pick the nearest eligible stop (pickup or delivery).
 
-    This guarantees every pickup occurs before every delivery, the
-    truck is fully loaded in the middle, and the route is distance-
-    optimised within each phase.
+      This produces interleaved routes like:
+        Depot → Pickup A → Deliver A → Pickup B → Deliver B → Depot
 
-    After building the NN route we apply 2-opt local search within
-    each phase to shorten the total distance further.
+      Instead of the old broken pattern:
+        Depot → Pickup A → Pickup B (200% overload!) → Deliver A → Deliver B
+
+      After building the NN route we apply 2-opt local search that preserves
+      the pickup-before-delivery constraint.
     """
     if not cluster_shipments:
         return {"stops": [], "total_distance_km": 0, "estimated_time": "0h 0m",
                 "fuel_cost": 0, "solver": "none"}
 
-    max_capacity = float(vehicle.get("max_weight_kg", 12000))
+    max_capacity = float(vehicle.get("max_weight_kg", vehicle.get("max_weight", 12000)))
 
     # ── Build depot stop ──
     if depot:
@@ -214,98 +212,114 @@ def optimize_route(cluster_shipments: list, vehicle: dict,
             "type": "depot",
         }
 
-    # ── Build per-shipment pickup & delivery stops ──
-    # No deduplication — each shipment gets its own pickup + delivery
-    # so load tracking is accurate per-shipment.
-    pickup_stops = []
-    delivery_stops = []
+    # ── Build per-shipment pickup & delivery stop pairs ──
+    # Each shipment gets its own pickup + delivery.
+    # shipment_idx links a delivery to its pickup.
+    all_stops = []   # list of stop dicts with "shipment_idx" field
 
-    for s in cluster_shipments:
+    for idx, s in enumerate(cluster_shipments):
         weight = float(s.get("weight_kg", 1000))
         code   = s.get("shipment_code", s.get("id", ""))
 
-        pickup_stops.append({
+        all_stops.append({
             "lat":  s.get("origin_lat"),
             "lng":  s.get("origin_lng"),
             "city": s.get("origin_city", ""),
             "type": "pickup",
             "shipment_code": code,
             "weight_kg": weight,
+            "shipment_idx": idx,
         })
-        delivery_stops.append({
+        all_stops.append({
             "lat":  s.get("dest_lat"),
             "lng":  s.get("dest_lng"),
             "city": s.get("dest_city", ""),
             "type": "delivery",
             "shipment_code": code,
             "weight_kg": weight,
+            "shipment_idx": idx,
         })
 
-    # ── Nearest-neighbour within a phase ──
-    def nn_order(stops_list, start_lat, start_lng):
-        if not stops_list:
-            return []
-        remaining = set(range(len(stops_list)))
-        ordered = []
-        cur_lat, cur_lng = start_lat, start_lng
-        while remaining:
-            nearest = min(remaining, key=lambda i: _haversine_km(
-                cur_lat, cur_lng, stops_list[i]["lat"], stops_list[i]["lng"]
-            ))
-            ordered.append(nearest)
-            cur_lat = stops_list[nearest]["lat"]
-            cur_lng = stops_list[nearest]["lng"]
-            remaining.discard(nearest)
-        return ordered
+    # ── Constraint-aware nearest-neighbour ──
+    # A delivery is only eligible once its corresponding pickup is done.
+    picked_up = set()        # shipment_idx whose pickup is done
+    visited   = set()        # indices into all_stops that have been visited
+    ordered   = []           # ordered list of stop dicts
 
-    # ── 2-opt improvement within a phase ──
-    def two_opt(stops_list, order):
-        """Improve a given order by swapping pairs (2-opt local search)."""
-        if len(order) < 3:
-            return order
-        improved = True
-        best = list(order)
-        while improved:
-            improved = False
-            for i in range(len(best) - 1):
-                for j in range(i + 2, len(best)):
-                    # Cost of current edges
-                    a, b = best[i], best[(i + 1) % len(best)]
-                    c, d = best[j], best[(j + 1) % len(best)] if j + 1 < len(best) else best[0]
-                    old_dist = (_haversine_km(stops_list[a]["lat"], stops_list[a]["lng"],
-                                              stops_list[b]["lat"], stops_list[b]["lng"]) +
-                                _haversine_km(stops_list[c]["lat"], stops_list[c]["lng"],
-                                              stops_list[d]["lat"], stops_list[d]["lng"]))
-                    new_dist = (_haversine_km(stops_list[a]["lat"], stops_list[a]["lng"],
-                                              stops_list[c]["lat"], stops_list[c]["lng"]) +
-                                _haversine_km(stops_list[b]["lat"], stops_list[b]["lng"],
-                                              stops_list[d]["lat"], stops_list[d]["lng"]))
+    cur_lat, cur_lng = depot_stop["lat"], depot_stop["lng"]
+
+    while len(visited) < len(all_stops):
+        # Find eligible stops: pickups (always eligible) + deliveries (only if pickup done)
+        eligible = []
+        for si, stop in enumerate(all_stops):
+            if si in visited:
+                continue
+            if stop["type"] == "pickup":
+                eligible.append(si)
+            elif stop["type"] == "delivery" and stop["shipment_idx"] in picked_up:
+                eligible.append(si)
+
+        if not eligible:
+            break
+
+        # Pick nearest eligible stop
+        nearest_si = min(eligible, key=lambda si: _haversine_km(
+            cur_lat, cur_lng, all_stops[si]["lat"], all_stops[si]["lng"]
+        ))
+
+        stop = all_stops[nearest_si]
+        visited.add(nearest_si)
+        ordered.append(stop)
+
+        if stop["type"] == "pickup":
+            picked_up.add(stop["shipment_idx"])
+
+        cur_lat, cur_lng = stop["lat"], stop["lng"]
+
+    # ── 2-opt improvement (preserving pickup-before-delivery constraint) ──
+    def _is_valid_order(order):
+        """Check that every delivery comes after its pickup."""
+        seen_pickups = set()
+        for stop in order:
+            if stop["type"] == "pickup":
+                seen_pickups.add(stop["shipment_idx"])
+            elif stop["type"] == "delivery":
+                if stop["shipment_idx"] not in seen_pickups:
+                    return False
+        return True
+
+    def _route_distance(order, start_lat, start_lng):
+        total = 0.0
+        prev_lat, prev_lng = start_lat, start_lng
+        for stop in order:
+            total += _haversine_km(prev_lat, prev_lng, stop["lat"], stop["lng"])
+            prev_lat, prev_lng = stop["lat"], stop["lng"]
+        return total
+
+    # Simple constrained 2-opt
+    improved = True
+    while improved:
+        improved = False
+        for i in range(len(ordered) - 1):
+            for j in range(i + 2, len(ordered)):
+                new_order = ordered[:i+1] + list(reversed(ordered[i+1:j+1])) + ordered[j+1:]
+                if _is_valid_order(new_order):
+                    old_dist = _route_distance(ordered, depot_stop["lat"], depot_stop["lng"])
+                    new_dist = _route_distance(new_order, depot_stop["lat"], depot_stop["lng"])
                     if new_dist < old_dist - 0.01:
-                        best[i + 1:j + 1] = reversed(best[i + 1:j + 1])
+                        ordered = new_order
                         improved = True
-        return best
+                        break
+            if improved:
+                break
 
-    # Phase 1 — order pickups from depot, then 2-opt
-    pickup_order = nn_order(pickup_stops, depot_stop["lat"], depot_stop["lng"])
-    pickup_order = two_opt(pickup_stops, pickup_order)
-    ordered_pickups = [pickup_stops[i] for i in pickup_order]
-
-    # Phase 2 — order deliveries from last pickup, then 2-opt
-    if ordered_pickups:
-        last = ordered_pickups[-1]
-        delivery_order = nn_order(delivery_stops, last["lat"], last["lng"])
-    else:
-        delivery_order = nn_order(delivery_stops, depot_stop["lat"], depot_stop["lng"])
-    delivery_order = two_opt(delivery_stops, delivery_order)
-    ordered_deliveries = [delivery_stops[i] for i in delivery_order]
-
-    # ── Determine end depot (nearest depot to last delivery) ──
-    last_delivery = ordered_deliveries[-1] if ordered_deliveries else (ordered_pickups[-1] if ordered_pickups else depot_stop)
+    # ── Determine end depot (nearest depot to last stop) ──
+    last_stop = ordered[-1] if ordered else depot_stop
     if all_depots and len(all_depots) > 1:
         best_end = None
         best_dist = float("inf")
         for d in all_depots:
-            dist = _haversine_km(last_delivery["lat"], last_delivery["lng"],
+            dist = _haversine_km(last_stop["lat"], last_stop["lng"],
                                  d.get("lat", 0), d.get("lng", 0))
             if dist < best_dist:
                 best_dist = dist
@@ -322,16 +336,16 @@ def optimize_route(cluster_shipments: list, vehicle: dict,
     else:
         depot_end = dict(depot_stop)
 
-    all_stops = [depot_stop] + ordered_pickups + ordered_deliveries + [depot_end]
+    final_stops = [depot_stop] + ordered + [depot_end]
 
     # ── Calculate distance & load tracking ──
     total_km = 0.0
     current_load = 0.0
-    for i, stop in enumerate(all_stops):
+    for i, stop in enumerate(final_stops):
         stop["sequence"] = i + 1
         if i > 0:
             total_km += _haversine_km(
-                all_stops[i - 1]["lat"], all_stops[i - 1]["lng"],
+                final_stops[i - 1]["lat"], final_stops[i - 1]["lng"],
                 stop["lat"], stop["lng"]
             )
         if stop["type"] == "pickup":
@@ -344,6 +358,10 @@ def optimize_route(cluster_shipments: list, vehicle: dict,
             stop["current_load_kg"] = round(current_load, 1)
             stop["load_pct"] = round((current_load / max_capacity) * 100, 1) if max_capacity > 0 else 0
 
+    # Clean up internal field before returning
+    for stop in final_stops:
+        stop.pop("shipment_idx", None)
+
     avg_speed_kmh = 60.0
     total_hours = total_km / avg_speed_kmh if avg_speed_kmh > 0 else 0
     hours = int(total_hours)
@@ -351,9 +369,9 @@ def optimize_route(cluster_shipments: list, vehicle: dict,
     fuel_cost = round(total_km * 8.5, 2)
 
     return {
-        "stops":              all_stops,
+        "stops":              final_stops,
         "total_distance_km":  round(total_km, 2),
         "estimated_time":     f"{hours}h {minutes}m",
         "fuel_cost":          fuel_cost,
-        "solver":             "sweep-nn-2opt",
+        "solver":             "constrained-nn-2opt",
     }

@@ -171,6 +171,7 @@ export default function ConsolidationPage() {
               estimatedCost: c.estimated_cost || 0,
               estimatedCo2: c.estimated_co2 || 0,
               status: c.status || "pending",
+              chained: c.chained || false,
             })),
           };
           setPlan(mapped);
@@ -248,6 +249,7 @@ export default function ConsolidationPage() {
               estimatedCost: c.estimated_cost || 0,
               estimatedCo2: c.estimated_co2 || 0,
               status: c.status || "pending",
+              chained: c.chained || false,
             })),
           };
           setPlan(mapped);
@@ -1456,6 +1458,21 @@ export default function ConsolidationPage() {
                                   vehiclesMap[cluster.vehicleId]?.name ||
                                   "Unknown Truck"}
                               </span>
+                              {cluster.chained && (
+                                <span
+                                  style={{
+                                    fontSize: "10px",
+                                    fontWeight: 700,
+                                    background: "rgba(14,165,233,0.12)",
+                                    color: "#0ea5e9",
+                                    padding: "2px 8px",
+                                    borderRadius: "6px",
+                                    letterSpacing: "0.04em",
+                                  }}
+                                >
+                                  CHAINED ROUTE
+                                </span>
+                              )}
                             </div>
                           </div>
                           <span

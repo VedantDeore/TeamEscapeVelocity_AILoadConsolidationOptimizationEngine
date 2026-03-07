@@ -154,6 +154,25 @@ def run_consolidation():
     if not vehicles:
         return jsonify({"error": "No available vehicles found in settings. Please add vehicles first."}), 400
 
+    # Exclude vehicles already assigned to active/accepted clusters
+    busy_vehicle_ids = set()
+    try:
+        active_clusters = sb.table("clusters").select("vehicle_id, status").in_(
+            "status", ["accepted", "in_transit"]
+        ).execute()
+        for ac in (active_clusters.data or []):
+            if ac.get("vehicle_id"):
+                busy_vehicle_ids.add(ac["vehicle_id"])
+    except Exception:
+        pass
+    
+    available_vehicles = [v for v in vehicles if v.get("id") not in busy_vehicle_ids]
+    if not available_vehicles:
+        return jsonify({
+            "error": "All vehicles are currently assigned to active routes. Accept/complete existing clusters or add more vehicles.",
+            "busy_vehicle_count": len(busy_vehicle_ids),
+        }), 400
+
     n_shipments_before = sb.table("shipments").select("id", count="exact").execute().count or len(shipments)
 
     # Check for oversized shipments that no vehicle can carry
@@ -175,8 +194,8 @@ def run_consolidation():
     cost_before  = trips_before * 9500   # rough avg per-trip cost
     co2_before_estimate = trips_before * 18.0  # rough kg CO₂ per solo trip
 
-    # --- 2. DBSCAN clustering with vehicles from database ---
-    clusters = cluster_shipments(shipments, constraints, vehicles)
+    # --- 2. DBSCAN clustering with available vehicles ---
+    clusters = cluster_shipments(shipments, constraints, available_vehicles)
 
     if not clusters:
         return jsonify({"error": "Clustering produced no groups"}), 500
@@ -254,8 +273,14 @@ def run_consolidation():
         # 3D bin packing
         packing = pack_cluster(c["shipments"], db_vehicle)
 
-        # Pick nearest depot for this cluster
-        depot = _get_nearest_depot(all_depots, c.get("centroid_lat", 0), c.get("centroid_lng", 0)) or fallback_depot
+        # Pick nearest depot to the FIRST pickup origin (not centroid)
+        # so the route starts from a depot near the actual first pickup
+        first_shipment = c["shipments"][0]
+        depot = _get_nearest_depot(
+            all_depots,
+            first_shipment.get("origin_lat", 0),
+            first_shipment.get("origin_lng", 0),
+        ) or fallback_depot
 
         # VRP route optimisation
         route   = optimize_route(c["shipments"], db_vehicle, depot, all_depots=all_depots)
@@ -304,7 +329,10 @@ def run_consolidation():
 
         # Update shipment status → consolidated
         try:
-            sb.table("shipments").update({"status": "consolidated"}).in_("id", c["shipment_ids"]).execute()
+            sb.table("shipments").update({
+                "status": "consolidated",
+                "status_changed_at": datetime.now(timezone.utc).isoformat(),
+            }).in_("id", c["shipment_ids"]).execute()
         except Exception:
             pass
 
@@ -334,6 +362,7 @@ def run_consolidation():
             "estimated_co2":   co2_cluster["co2_after"],
             "packing_layout":  packing,
             "route_stops":     route["stops"],
+            "chained":         c.get("chained", False),
         })
 
     # --- 7. Activity feed ---
@@ -385,7 +414,7 @@ def edit_cluster(cluster_id):
         if remove_ids:
             for sid in remove_ids:
                 sb.table("cluster_shipments").delete().eq("cluster_id", cluster_id).eq("shipment_id", sid).execute()
-                sb.table("shipments").update({"status": "pending"}).eq("id", sid).execute()
+                sb.table("shipments").update({"status": "pending", "status_changed_at": datetime.now(timezone.utc).isoformat()}).eq("id", sid).execute()
 
             # Recalculate cluster weight/volume from remaining shipments
             remaining = sb.table("cluster_shipments").select("shipment_id").eq("cluster_id", cluster_id).execute()
@@ -467,7 +496,7 @@ def submit_feedback(cluster_id):
                 cs = sb.table("cluster_shipments").select("shipment_id").eq("cluster_id", cluster_id).execute()
                 shipment_ids = [r["shipment_id"] for r in (cs.data or [])]
                 if shipment_ids:
-                    sb.table("shipments").update({"status": "pending"}).in_("id", shipment_ids).execute()
+                    sb.table("shipments").update({"status": "pending", "status_changed_at": datetime.now(timezone.utc).isoformat()}).in_("id", shipment_ids).execute()
             except Exception:
                 pass
 

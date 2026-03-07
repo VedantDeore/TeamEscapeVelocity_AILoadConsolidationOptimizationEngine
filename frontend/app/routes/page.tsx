@@ -846,14 +846,27 @@ export default function RoutesPage() {
                               <span
                                 style={{ color: "#0ea5e9", fontWeight: 600 }}
                               >
-                                📦 {pickups.length} Pickups
+                                📦 Pickup
                               </span>
                               <span>→</span>
                               <span
                                 style={{ color: "#10b981", fontWeight: 600 }}
                               >
-                                📍 {deliveries.length} Deliveries
+                                📍 Deliver
                               </span>
+                              {pickups.length > 1 && (
+                                <>
+                                  <span>→</span>
+                                  <span
+                                    style={{
+                                      color: "#94a3b8",
+                                      fontWeight: 500,
+                                    }}
+                                  >
+                                    ... × {pickups.length}
+                                  </span>
+                                </>
+                              )}
                               <span>→</span>
                               <span
                                 style={{ color: "#f59e0b", fontWeight: 700 }}
