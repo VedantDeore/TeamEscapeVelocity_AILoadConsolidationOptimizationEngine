@@ -145,45 +145,74 @@ def carbon_metrics():
         monthly   = type("R", (), {"data": []})()
         breakdown = type("R", (), {"data": []})()
 
-    # Latest plan green score
-    green_score    = "N/A"
-    trees_equiv    = 0
-    car_km_avoided = 0
-    co2_saved_total = 0
+    # Aggregate metrics across ALL consolidation runs
+    green_score      = "N/A"
+    trees_equiv      = 0
+    car_km_avoided   = 0
+    co2_saved_total  = 0
+    co2_before_total = 0
+    co2_after_total  = 0
+    pct_saved        = 0
+    trips_before_total = 0
+    trips_after_total  = 0
+    trips_eliminated   = 0
 
     try:
-        plan = sb.table("consolidation_plans").select(
-            "co2_before, co2_after, total_clusters"
-        ).order("created_at", desc=True).limit(1).execute()
+        plans = sb.table("consolidation_plans").select(
+            "co2_before, co2_after, total_clusters, trips_before, trips_after"
+        ).order("created_at", desc=False).execute()
 
-        if plan.data:
-            p           = plan.data[0]
-            co2_b       = p.get("co2_before", 2400) or 2400
-            co2_a       = p.get("co2_after", 1600)  or 1600
-            co2_s       = co2_b - co2_a
-            co2_saved_total = co2_s
-            pct_saved       = co2_s / max(co2_b, 1) * 100
+        if plans.data:
+            # Sum CO₂ and trips across ALL runs
+            for p in plans.data:
+                co2_b = p.get("co2_before", 0) or 0
+                co2_a = p.get("co2_after", 0)  or 0
+                co2_before_total += co2_b
+                co2_after_total  += co2_a
+                co2_saved_total  += max(co2_b - co2_a, 0)
 
-            # Green score
+                tb = p.get("trips_before", 0) or 0
+                ta = p.get("trips_after", 0)  or 0
+                trips_before_total += tb
+                trips_after_total  += ta
+                trips_eliminated   += max(tb - ta, 0)
+
+            pct_saved = round(co2_saved_total / max(co2_before_total, 1) * 100, 1)
+
+            # Green score based on overall percentage
             if pct_saved >= 40:   green_score = "A+"
             elif pct_saved >= 30: green_score = "A"
             elif pct_saved >= 20: green_score = "B+"
             elif pct_saved >= 15: green_score = "B"
             elif pct_saved >= 10: green_score = "C"
-            else:                 green_score = "D"
+            elif pct_saved >= 5:  green_score = "D"
+            else:                 green_score = "F"
 
-            trees_equiv    = int(co2_s / 22)
-            car_km_avoided = int(co2_s / 0.166)
+            trees_equiv    = int(co2_saved_total / 22)
+            car_km_avoided = int(co2_saved_total / 0.166)
     except Exception:
         pass
 
+    # Derived sustainability metrics
+    energy_saved_kwh  = round(co2_saved_total * 0.7, 1)
+    fuel_saved_liters = round(co2_saved_total / 2.68, 1)
+    clean_air_days    = max(int(co2_saved_total / 250), 0)
+
     return jsonify({
-        "monthly":          monthly.data,
-        "breakdown":        breakdown.data,
-        "green_score":      green_score,
-        "trees_equivalent": trees_equiv,
-        "car_km_avoided":   car_km_avoided,
-        "co2_saved_total":  round(co2_saved_total, 2),
+        "monthly":            monthly.data,
+        "breakdown":          breakdown.data,
+        "green_score":        green_score,
+        "trees_equivalent":   trees_equiv,
+        "car_km_avoided":     car_km_avoided,
+        "co2_saved_total":    round(co2_saved_total, 2),
+        "co2_before":         round(co2_before_total, 2),
+        "co2_after":          round(co2_after_total, 2),
+        "pct_saved":          pct_saved,
+        "trips_eliminated":   trips_eliminated,
+        "energy_saved_kwh":   energy_saved_kwh,
+        "fuel_saved_liters":  fuel_saved_liters,
+        "clean_air_days":     clean_air_days,
+        "total_runs":         len(plans.data) if plans.data else 0,
     })
 
 
@@ -192,3 +221,53 @@ def utilization_trend():
     sb     = get_supabase()
     result = sb.table("utilization_trend").select("*").execute()
     return jsonify(result.data)
+
+
+@analytics_bp.route("/api/analytics/carbon-runs", methods=["GET"])
+def carbon_per_run():
+    """Return CO₂ data broken down by consolidation run and per-cluster."""
+    sb = get_supabase()
+
+    # Fetch all consolidation plans ordered by creation
+    plans = sb.table("consolidation_plans").select(
+        "id, name, created_at, co2_before, co2_after, "
+        "trips_before, trips_after, total_clusters, total_shipments"
+    ).order("created_at", desc=False).execute()
+
+    runs = []
+    for i, p in enumerate(plans.data or []):
+        co2_b = p.get("co2_before", 0) or 0
+        co2_a = p.get("co2_after", 0)  or 0
+        saved  = max(co2_b - co2_a, 0)
+        runs.append({
+            "run":             i + 1,
+            "plan_id":         p["id"],
+            "name":            p.get("name", f"Run {i+1}"),
+            "created_at":      p.get("created_at"),
+            "co2_before":      round(co2_b, 2),
+            "co2_after":       round(co2_a, 2),
+            "co2_saved":       round(saved, 2),
+            "trips_before":    p.get("trips_before", 0) or 0,
+            "trips_after":     p.get("trips_after", 0)  or 0,
+            "total_clusters":  p.get("total_clusters", 0) or 0,
+            "total_shipments": p.get("total_shipments", 0) or 0,
+        })
+
+    # Fetch clusters for per-truck breakdown (from latest 5 plans)
+    latest_ids = [r["plan_id"] for r in runs[-5:]] if runs else []
+    clusters_data = []
+    if latest_ids:
+        try:
+            cl = sb.table("clusters").select(
+                "plan_id, vehicle_name, estimated_co2, "
+                "route_distance_km, total_weight, utilization_pct"
+            ).in_("plan_id", latest_ids).execute()
+            clusters_data = cl.data or []
+        except Exception:
+            pass
+
+    return jsonify({
+        "runs":     runs,
+        "clusters": clusters_data,
+    })
+
