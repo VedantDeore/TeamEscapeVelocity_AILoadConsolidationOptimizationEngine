@@ -22,7 +22,7 @@ import {
   suggestedPrompts,
   type ChatMessage,
 } from "@/lib/mock-data";
-import { getChatHistory, sendChatMessage } from "@/lib/api";
+import { getChatHistory, sendChatMessage, runConsolidation } from "@/lib/api";
 
 export default function CopilotPage() {
   const [messages, setMessages] = useState<ChatMessage[]>(mockChatHistory);
@@ -76,7 +76,7 @@ export default function CopilotPage() {
           data.actions.forEach((a: any) => {
             actions.push({
               label: a.label || a,
-              type: a.type || "optimize",
+              type: a.type || a.action || "optimize",
             });
           });
         }
@@ -114,6 +114,65 @@ export default function CopilotPage() {
       .finally(() => {
         setIsTyping(false);
       });
+  };
+
+  const handleActionClick = (action: { label: string; type: string }) => {
+    if (
+      action.label.toLowerCase().includes("run") ||
+      action.type === "optimize" ||
+      action.type === "run_consolidation"
+    ) {
+      const userMsg: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        role: "user",
+        content: `Running ${action.label}...`,
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      };
+      setMessages((prev) => [...prev, userMsg]);
+      setIsTyping(true);
+
+      runConsolidation()
+        .then((res) => {
+          const aiMsg: ChatMessage = {
+            id: `msg-${Date.now() + 1}`,
+            role: "assistant",
+            content: `✅ Consolidation plan successfully generated!\n\n**Total Clusters:** ${
+              res.total_clusters || 0
+            }\n**Cost Savings:** ₹${
+              res.savings?.toLocaleString("en-IN") || 0
+            }\n**CO₂ Reduced:** ${res.co2_saved || 0} kg\n\nCheck the Analytics Dashboard for full details.`,
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          };
+          setMessages((prev) => [...prev, aiMsg]);
+        })
+        .catch((err) => {
+          let errorMessage = "Failed to run consolidation.";
+          if (err instanceof Error) errorMessage = err.message;
+
+          const aiMsg: ChatMessage = {
+            id: `msg-${Date.now() + 1}`,
+            role: "assistant",
+            content: `Failed to run consolidation: ${errorMessage}`,
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          };
+          setMessages((prev) => [...prev, aiMsg]);
+        })
+        .finally(() => {
+          setIsTyping(false);
+          scrollToBottom();
+        });
+    } else {
+      handleSend(action.label);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -249,6 +308,7 @@ export default function CopilotPage() {
                       <button
                         key={action.label}
                         className="btn btn-sm btn-secondary"
+                        onClick={() => handleActionClick(action)}
                       >
                         {action.type === "map" ? (
                           <Map size={12} />
