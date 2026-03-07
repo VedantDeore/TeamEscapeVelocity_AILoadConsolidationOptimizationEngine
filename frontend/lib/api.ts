@@ -141,9 +141,49 @@ export async function getDashboardData() {
 }
 
 export async function getCarbonMetrics() {
-  return fetchApi<{ monthly: any[]; breakdown: any[] }>(
-    "/api/analytics/carbon",
-  );
+  return fetchApi<{
+    monthly: any[];
+    breakdown: any[];
+    green_score: string;
+    trees_equivalent: number;
+    car_km_avoided: number;
+    co2_saved_total: number;
+    co2_before: number;
+    co2_after: number;
+    pct_saved: number;
+    trips_eliminated: number;
+    energy_saved_kwh: number;
+    fuel_saved_liters: number;
+    clean_air_days: number;
+  }>("/api/analytics/carbon");
+}
+
+// ---- Carbon Runs (per consolidation) ----
+
+export async function getCarbonRuns() {
+  return fetchApi<{
+    runs: Array<{
+      run: number;
+      plan_id: string;
+      name: string;
+      created_at: string;
+      co2_before: number;
+      co2_after: number;
+      co2_saved: number;
+      trips_before: number;
+      trips_after: number;
+      total_clusters: number;
+      total_shipments: number;
+    }>;
+    clusters: Array<{
+      plan_id: string;
+      vehicle_name: string;
+      estimated_co2: number;
+      route_distance_km: number;
+      total_weight: number;
+      utilization_pct: number;
+    }>;
+  }>("/api/analytics/carbon-runs");
 }
 
 // ---- Scenarios ----
