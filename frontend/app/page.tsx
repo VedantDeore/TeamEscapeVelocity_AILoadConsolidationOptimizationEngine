@@ -128,6 +128,55 @@ export default function DashboardPage() {
           ))}
         </div>
 
+
+         {/* ── Dark Hero Section (Stripe "Scale with confidence" style) ── */}
+        <div className="hero-dark-section animate-slide-up">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '48px', alignItems: 'center' }}>
+            <div>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                background: 'rgba(99,91,255,0.20)', color: '#a5b4fc',
+                padding: '4px 12px', borderRadius: '999px',
+                fontSize: '12px', fontWeight: 600, marginBottom: '18px',
+              }}>
+                <Zap size={11} /> AI-Powered Engine
+              </div>
+              <h2 className="hero-dark-title">
+                Scale logistics operations<br />
+                <span className="text-gradient-hero">with confidence.</span>
+              </h2>
+              <p className="hero-dark-subtitle" style={{ marginTop: '16px', maxWidth: '380px' }}>
+                Handle hundreds of shipments per day with consistent AI-optimized routing,
+                consolidation, and real-time cost intelligence.
+              </p>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '28px' }}>
+                <Link href="/copilot">
+                  <button className="btn btn-primary">Ask AI Co-Pilot <ArrowRight size={14} /></button>
+                </Link>
+                <Link href="/reports">
+                  <button className="btn btn-secondary" style={{ background: 'rgba(255,255,255,0.08)', color: '#ffffff', borderColor: 'rgba(255,255,255,0.15)' }}>
+                    View Reports
+                  </button>
+                </Link>
+              </div>
+            </div>
+            <div className="hero-stats-row">
+              {[
+                { value: '150+', label: 'Shipments processed\ndaily', cls: '' },
+                { value: '87%', label: 'Avg vehicle\nutilization', cls: 'purple' },
+                { value: '31%', label: 'Average cost\nreduction', cls: 'green' },
+                { value: '33%', label: 'CO₂ emissions\nreduced', cls: 'amber' },
+              ].map((s) => (
+                <div key={s.label} className="hero-stat">
+                  <div className={`hero-stat-value ${s.cls}`}>{s.value}</div>
+                  <div className="hero-stat-label" style={{ whiteSpace: 'pre-line' }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+
         {/* ── KPI Cards Grid ── */}
         <div
           className="stagger-children"
@@ -315,53 +364,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Dark Hero Section (Stripe "Scale with confidence" style) ── */}
-        <div className="hero-dark-section animate-slide-up">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '48px', alignItems: 'center' }}>
-            <div>
-              <div style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-                background: 'rgba(99,91,255,0.20)', color: '#a5b4fc',
-                padding: '4px 12px', borderRadius: '999px',
-                fontSize: '12px', fontWeight: 600, marginBottom: '18px',
-              }}>
-                <Zap size={11} /> AI-Powered Engine
-              </div>
-              <h2 className="hero-dark-title">
-                Scale logistics operations<br />
-                <span className="text-gradient-hero">with confidence.</span>
-              </h2>
-              <p className="hero-dark-subtitle" style={{ marginTop: '16px', maxWidth: '380px' }}>
-                Handle hundreds of shipments per day with consistent AI-optimized routing,
-                consolidation, and real-time cost intelligence.
-              </p>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '28px' }}>
-                <Link href="/copilot">
-                  <button className="btn btn-primary">Ask AI Co-Pilot <ArrowRight size={14} /></button>
-                </Link>
-                <Link href="/reports">
-                  <button className="btn btn-secondary" style={{ background: 'rgba(255,255,255,0.08)', color: '#ffffff', borderColor: 'rgba(255,255,255,0.15)' }}>
-                    View Reports
-                  </button>
-                </Link>
-              </div>
-            </div>
-            <div className="hero-stats-row">
-              {[
-                { value: '150+', label: 'Shipments processed\ndaily', cls: '' },
-                { value: '87%', label: 'Avg vehicle\nutilization', cls: 'purple' },
-                { value: '31%', label: 'Average cost\nreduction', cls: 'green' },
-                { value: '33%', label: 'CO₂ emissions\nreduced', cls: 'amber' },
-              ].map((s) => (
-                <div key={s.label} className="hero-stat">
-                  <div className={`hero-stat-value ${s.cls}`}>{s.value}</div>
-                  <div className="hero-stat-label" style={{ whiteSpace: 'pre-line' }}>{s.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
+       
       </div>
     </>
   );
