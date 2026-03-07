@@ -1,21 +1,97 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from "react";
 import {
-  Settings, Truck, MapPin, IndianRupee, Leaf, Key,
-  SlidersHorizontal, Plus, Edit, Trash2, Save, Check
-} from 'lucide-react';
-import { mockVehicles, mockDepots, mockCostParams, type Vehicle, type DepotLocation } from '@/lib/mock-data';
+  Settings,
+  Truck,
+  MapPin,
+  IndianRupee,
+  Leaf,
+  Key,
+  SlidersHorizontal,
+  Plus,
+  Edit,
+  Trash2,
+  Save,
+  Check,
+} from "lucide-react";
+import {
+  mockVehicles,
+  mockDepots,
+  mockCostParams,
+  type Vehicle,
+  type DepotLocation,
+} from "@/lib/mock-data";
+import {
+  getVehicles,
+  getDepots,
+  getCostParams,
+  updateCostParams,
+} from "@/lib/api";
 
 export default function SettingsPage() {
-  const [vehicles] = useState<Vehicle[]>(mockVehicles);
-  const [depots] = useState<DepotLocation[]>(mockDepots);
+  const [vehicles, setVehicles] = useState<Vehicle[]>(mockVehicles);
+  const [depots, setDepots] = useState<DepotLocation[]>(mockDepots);
   const [costParams, setCostParams] = useState(mockCostParams);
   const [saved, setSaved] = useState(false);
 
+  useEffect(() => {
+    getVehicles()
+      .then((data) => {
+        if (data?.length) {
+          const mapped = data.map((v: any) => ({
+            id: v.id,
+            name: v.name,
+            type: v.type,
+            maxWeightKg: v.max_weight_kg,
+            maxVolumeM3: v.max_volume_m3,
+            lengthCm: v.length_cm,
+            widthCm: v.width_cm,
+            heightCm: v.height_cm,
+            costPerKm: v.cost_per_km,
+            emissionFactor: v.emission_factor,
+            isAvailable: v.is_available,
+          }));
+          setVehicles(mapped);
+        }
+      })
+      .catch(() => {});
+    getDepots()
+      .then((data) => {
+        if (data?.length) {
+          setDepots(data);
+        }
+      })
+      .catch(() => {});
+    getCostParams()
+      .then((data) => {
+        if (data && data.fuel_cost_per_km !== undefined) {
+          setCostParams({
+            fuelCostPerKm: data.fuel_cost_per_km,
+            driverCostPerHr: data.driver_cost_per_hr,
+            tollAvgPerTrip: data.toll_avg_per_trip,
+            maintenanceCostPerKm: data.maintenance_cost_per_km,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    updateCostParams({
+      fuel_cost_per_km: costParams.fuelCostPerKm,
+      driver_cost_per_hr: costParams.driverCostPerHr,
+      toll_avg_per_trip: costParams.tollAvgPerTrip,
+      maintenance_cost_per_km: costParams.maintenanceCostPerKm,
+    })
+      .then(() => {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      })
+      .catch(() => {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      });
   };
 
   return (
@@ -23,21 +99,34 @@ export default function SettingsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Settings & Configuration</h1>
-          <p className="page-subtitle">Manage fleet, depots, cost parameters, and system preferences</p>
+          <p className="page-subtitle">
+            Manage fleet, depots, cost parameters, and system preferences
+          </p>
         </div>
         <button className="btn btn-primary" onClick={handleSave}>
-          {saved ? <><Check size={16} /> Saved!</> : <><Save size={16} /> Save Changes</>}
+          {saved ? (
+            <>
+              <Check size={16} /> Saved!
+            </>
+          ) : (
+            <>
+              <Save size={16} /> Save Changes
+            </>
+          )}
         </button>
       </div>
 
       <div className="page-body">
         <div className="settings-grid">
           {/* Vehicle Fleet */}
-          <div className="settings-section" style={{ gridColumn: '1 / -1' }}>
+          <div className="settings-section" style={{ gridColumn: "1 / -1" }}>
             <div className="settings-section-title">
-              <Truck size={18} style={{ color: 'var(--lorri-primary)' }} />
+              <Truck size={18} style={{ color: "var(--lorri-primary)" }} />
               Vehicle Fleet Management
-              <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }}>
+              <button
+                className="btn btn-sm btn-primary"
+                style={{ marginLeft: "auto" }}
+              >
                 <Plus size={13} /> Add Vehicle
               </button>
             </div>
@@ -60,25 +149,39 @@ export default function SettingsPage() {
                   {vehicles.map((v) => (
                     <tr key={v.id}>
                       <td style={{ fontWeight: 600 }}>{v.name}</td>
-                      <td><span className="badge badge-ghost">{v.type}</span></td>
+                      <td>
+                        <span className="badge badge-ghost">{v.type}</span>
+                      </td>
                       <td>{v.maxWeightKg.toLocaleString()} kg</td>
                       <td>{v.maxVolumeM3} m³</td>
-                      <td style={{ fontFamily: 'monospace', fontSize: '12px' }}>
+                      <td style={{ fontFamily: "monospace", fontSize: "12px" }}>
                         {v.lengthCm}×{v.widthCm}×{v.heightCm} cm
                       </td>
                       <td>₹{v.costPerKm}</td>
                       <td>{v.emissionFactor}</td>
                       <td>
-                        <span className={`badge ${v.isAvailable ? 'badge-success' : 'badge-danger'}`}>
-                          {v.isAvailable ? 'Available' : 'Offline'}
+                        <span
+                          className={`badge ${v.isAvailable ? "badge-success" : "badge-danger"}`}
+                        >
+                          {v.isAvailable ? "Available" : "Offline"}
                         </span>
                       </td>
                       <td>
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          <button className="btn btn-ghost btn-icon" style={{ width: '28px', height: '28px' }}>
+                        <div style={{ display: "flex", gap: "4px" }}>
+                          <button
+                            className="btn btn-ghost btn-icon"
+                            style={{ width: "28px", height: "28px" }}
+                          >
                             <Edit size={13} />
                           </button>
-                          <button className="btn btn-ghost btn-icon" style={{ width: '28px', height: '28px', color: 'var(--lorri-danger)' }}>
+                          <button
+                            className="btn btn-ghost btn-icon"
+                            style={{
+                              width: "28px",
+                              height: "28px",
+                              color: "var(--lorri-danger)",
+                            }}
+                          >
                             <Trash2 size={13} />
                           </button>
                         </div>
@@ -93,41 +196,64 @@ export default function SettingsPage() {
           {/* Depot Locations */}
           <div className="settings-section">
             <div className="settings-section-title">
-              <MapPin size={18} style={{ color: '#f59e0b' }} />
+              <MapPin size={18} style={{ color: "#f59e0b" }} />
               Depot Locations
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "10px" }}
+            >
               {depots.map((depot) => (
                 <div
                   key={depot.id}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: '12px',
-                    padding: '12px',
-                    background: 'var(--bg-elevated)',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-secondary)',
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    padding: "12px",
+                    background: "var(--bg-elevated)",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--border-secondary)",
                   }}
                 >
-                  <div style={{
-                    width: '36px', height: '36px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'rgba(245, 158, 11, 0.1)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <MapPin size={16} style={{ color: '#fbbf24' }} />
+                  <div
+                    style={{
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "var(--radius-md)",
+                      background: "rgba(245, 158, 11, 0.1)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <MapPin size={16} style={{ color: "#fbbf24" }} />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '13px', fontWeight: 600 }}>{depot.name}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                      {depot.city} · {depot.lat.toFixed(4)}, {depot.lng.toFixed(4)}
+                    <div style={{ fontSize: "13px", fontWeight: 600 }}>
+                      {depot.name}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "var(--text-tertiary)",
+                      }}
+                    >
+                      {depot.city} · {depot.lat.toFixed(4)},{" "}
+                      {depot.lng.toFixed(4)}
                     </div>
                   </div>
-                  <button className="btn btn-ghost btn-icon" style={{ width: '28px', height: '28px' }}>
+                  <button
+                    className="btn btn-ghost btn-icon"
+                    style={{ width: "28px", height: "28px" }}
+                  >
                     <Edit size={13} />
                   </button>
                 </div>
               ))}
-              <button className="btn btn-sm btn-secondary" style={{ alignSelf: 'flex-start' }}>
+              <button
+                className="btn btn-sm btn-secondary"
+                style={{ alignSelf: "flex-start" }}
+              >
                 <Plus size={13} /> Add Depot
               </button>
             </div>
@@ -136,10 +262,12 @@ export default function SettingsPage() {
           {/* Cost Parameters */}
           <div className="settings-section">
             <div className="settings-section-title">
-              <IndianRupee size={18} style={{ color: '#10b981' }} />
+              <IndianRupee size={18} style={{ color: "#10b981" }} />
               Cost Parameters
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "14px" }}
+            >
               <div>
                 <label className="label">Fuel Cost (₹/km)</label>
                 <input
@@ -147,7 +275,12 @@ export default function SettingsPage() {
                   type="number"
                   step="0.5"
                   value={costParams.fuelCostPerKm}
-                  onChange={(e) => setCostParams(p => ({ ...p, fuelCostPerKm: parseFloat(e.target.value) }))}
+                  onChange={(e) =>
+                    setCostParams((p) => ({
+                      ...p,
+                      fuelCostPerKm: parseFloat(e.target.value),
+                    }))
+                  }
                 />
               </div>
               <div>
@@ -157,7 +290,12 @@ export default function SettingsPage() {
                   type="number"
                   step="10"
                   value={costParams.driverCostPerHr}
-                  onChange={(e) => setCostParams(p => ({ ...p, driverCostPerHr: parseFloat(e.target.value) }))}
+                  onChange={(e) =>
+                    setCostParams((p) => ({
+                      ...p,
+                      driverCostPerHr: parseFloat(e.target.value),
+                    }))
+                  }
                 />
               </div>
               <div>
@@ -167,7 +305,12 @@ export default function SettingsPage() {
                   type="number"
                   step="100"
                   value={costParams.tollAvgPerTrip}
-                  onChange={(e) => setCostParams(p => ({ ...p, tollAvgPerTrip: parseFloat(e.target.value) }))}
+                  onChange={(e) =>
+                    setCostParams((p) => ({
+                      ...p,
+                      tollAvgPerTrip: parseFloat(e.target.value),
+                    }))
+                  }
                 />
               </div>
               <div>
@@ -177,7 +320,12 @@ export default function SettingsPage() {
                   type="number"
                   step="0.5"
                   value={costParams.maintenanceCostPerKm}
-                  onChange={(e) => setCostParams(p => ({ ...p, maintenanceCostPerKm: parseFloat(e.target.value) }))}
+                  onChange={(e) =>
+                    setCostParams((p) => ({
+                      ...p,
+                      maintenanceCostPerKm: parseFloat(e.target.value),
+                    }))
+                  }
                 />
               </div>
             </div>
@@ -186,25 +334,51 @@ export default function SettingsPage() {
           {/* Emission Factors */}
           <div className="settings-section">
             <div className="settings-section-title">
-              <Leaf size={18} style={{ color: '#06b6d4' }} />
+              <Leaf size={18} style={{ color: "#06b6d4" }} />
               Emission Factors
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "14px" }}
+            >
               <div>
-                <label className="label">Heavy Truck (full) — kg CO₂/ton-km</label>
-                <input className="input" type="number" step="0.001" defaultValue="0.062" />
+                <label className="label">
+                  Heavy Truck (full) — kg CO₂/ton-km
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.001"
+                  defaultValue="0.062"
+                />
               </div>
               <div>
-                <label className="label">Heavy Truck (empty) — kg CO₂/ton-km</label>
-                <input className="input" type="number" step="0.001" defaultValue="0.031" />
+                <label className="label">
+                  Heavy Truck (empty) — kg CO₂/ton-km
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.001"
+                  defaultValue="0.031"
+                />
               </div>
               <div>
                 <label className="label">Light Truck — kg CO₂/ton-km</label>
-                <input className="input" type="number" step="0.001" defaultValue="0.090" />
+                <input
+                  className="input"
+                  type="number"
+                  step="0.001"
+                  defaultValue="0.090"
+                />
               </div>
               <div>
                 <label className="label">Medium Truck — kg CO₂/ton-km</label>
-                <input className="input" type="number" step="0.001" defaultValue="0.075" />
+                <input
+                  className="input"
+                  type="number"
+                  step="0.001"
+                  defaultValue="0.075"
+                />
               </div>
             </div>
           </div>
@@ -212,25 +386,42 @@ export default function SettingsPage() {
           {/* API Keys */}
           <div className="settings-section">
             <div className="settings-section-title">
-              <Key size={18} style={{ color: '#8b5cf6' }} />
+              <Key size={18} style={{ color: "#8b5cf6" }} />
               API Key Management
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "14px" }}
+            >
               <div>
                 <label className="label">Groq API Key</label>
-                <input className="input" type="password" defaultValue="gsk_••••••••••••••••••••" />
+                <input
+                  className="input"
+                  type="password"
+                  defaultValue="gsk_••••••••••••••••••••"
+                />
               </div>
               <div>
                 <label className="label">OpenRouteService API Key</label>
-                <input className="input" type="password" defaultValue="5b••••••••••••••••••••••" />
+                <input
+                  className="input"
+                  type="password"
+                  defaultValue="5b••••••••••••••••••••••"
+                />
               </div>
               <div>
                 <label className="label">Supabase URL</label>
-                <input className="input" defaultValue="https://your-project.supabase.co" />
+                <input
+                  className="input"
+                  defaultValue="https://your-project.supabase.co"
+                />
               </div>
               <div>
                 <label className="label">Supabase Anon Key</label>
-                <input className="input" type="password" defaultValue="eyJhbGci••••••••••••••••" />
+                <input
+                  className="input"
+                  type="password"
+                  defaultValue="eyJhbGci••••••••••••••••"
+                />
               </div>
             </div>
           </div>
@@ -238,10 +429,12 @@ export default function SettingsPage() {
           {/* Default Constraints */}
           <div className="settings-section">
             <div className="settings-section-title">
-              <SlidersHorizontal size={18} style={{ color: '#f59e0b' }} />
+              <SlidersHorizontal size={18} style={{ color: "#f59e0b" }} />
               Default Constraints
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "14px" }}
+            >
               <div>
                 <label className="label">Max Detour (%)</label>
                 <select className="input select" defaultValue="15">
@@ -261,7 +454,12 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">DBSCAN Epsilon (km)</label>
-                <input className="input" type="number" step="5" defaultValue="50" />
+                <input
+                  className="input"
+                  type="number"
+                  step="5"
+                  defaultValue="50"
+                />
               </div>
               <div>
                 <label className="label">Min Samples per Cluster</label>
