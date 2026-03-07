@@ -4,14 +4,15 @@ import { useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import {
   FlaskConical, Award, Zap, Play, Pause, Cpu,
-  Truck,
+  Truck, Loader2, AlertCircle,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis,
   PolarRadiusAxis, Radar, Legend, AreaChart, Area,
 } from 'recharts';
-import { mockScenarios, mockShipments, mockVehicles, type ScenarioResult } from '@/lib/mock-data';
+import { mockShipments, mockVehicles } from '@/lib/mock-data';
+import { runScenarioSimulation, type SimulationResult, type SimulationScenario } from '@/lib/api';
 import { clientSidePack, type ClientPackingItem, type ClientContainer } from '@/lib/api';
 import type { PackingResultData, PackingStep } from '@/components/packing-3d/PackingVisualizer3D';
 
@@ -113,9 +114,57 @@ function buildSimPacking(count: number) {
   return { data, steps: data.steps.map(s => ({ step: s.step_number, utilization: +s.utilization_pct.toFixed(1) })) };
 }
 
+// Helper: format cost in ₹ lakhs
+function formatCostLakhs(cost: number): string {
+  const lakhs = cost / 100000;
+  if (lakhs >= 1) return `₹${lakhs.toFixed(1)}L`;
+  const thousands = cost / 1000;
+  return `₹${thousands.toFixed(0)}K`;
+}
+
+// Helper: compute radar scores from scenario data
+function computeRadarData(scenarios: SimulationScenario[]) {
+  const baseline = scenarios[0]; // No Consolidation
+  if (!baseline) return [];
+
+  return [
+    {
+      m: 'Cost Efficiency',
+      ...Object.fromEntries(scenarios.map(sc => [
+        sc.name,
+        Math.round(Math.min(100, (1 - sc.total_cost / Math.max(baseline.total_cost * 1.5, 1)) * 100 + 50)),
+      ])),
+    },
+    {
+      m: 'Utilization',
+      ...Object.fromEntries(scenarios.map(sc => [sc.name, Math.round(sc.avg_utilization)])),
+    },
+    {
+      m: 'Carbon Score',
+      ...Object.fromEntries(scenarios.map(sc => [
+        sc.name,
+        Math.round(Math.min(100, (1 - sc.co2_emissions / Math.max(baseline.co2_emissions * 1.3, 1)) * 100 + 40)),
+      ])),
+    },
+    {
+      m: 'SLA Compliance',
+      ...Object.fromEntries(scenarios.map(sc => [sc.name, Math.round(sc.delivery_sla_met)])),
+    },
+    {
+      m: 'Trip Efficiency',
+      ...Object.fromEntries(scenarios.map(sc => [
+        sc.name,
+        Math.round(Math.min(100, (1 - sc.total_trips / Math.max(baseline.total_trips * 1.2, 1)) * 100 + 45)),
+      ])),
+    },
+  ];
+}
+
 /* ══════════════════════════════════════════════════════════════════════ */
 export default function SimulatePage() {
-  const [scenarios] = useState<ScenarioResult[]>(mockScenarios);
+  const [simResult, setSimResult] = useState<SimulationResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showPacking, setShowPacking] = useState(false);
   const [packingData, setPackingData] = useState<PackingResultData | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -124,12 +173,27 @@ export default function SimulatePage() {
   const [utilSteps, setUtilSteps] = useState<{ step: number; utilization: number }[]>([]);
   const animRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const run = useCallback(() => {
-    const { data, steps } = buildSimPacking(150);
-    setPackingData(data);
-    setShowPacking(true);
-    setAnimationStep(data.placements.length);
-    setUtilSteps(steps);
+  const run = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Call the real backend API
+      const result = await runScenarioSimulation();
+      setSimResult(result);
+
+      // Also build the 3D packing visualisation
+      const { data, steps } = buildSimPacking(150);
+      setPackingData(data);
+      setShowPacking(true);
+      setAnimationStep(data.placements.length);
+      setUtilSteps(steps);
+    } catch (err: any) {
+      console.error('Simulation failed:', err);
+      setError(err.message || 'Failed to run simulation. Please ensure the backend is running.');
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   const animate = useCallback(() => {
@@ -144,19 +208,30 @@ export default function SimulatePage() {
     }, 550);
   }, [packingData, isAnimating]);
 
-  const barData = [
-    { metric: 'Trips', ...Object.fromEntries(scenarios.map(s => [s.name, s.totalTrips])) },
-    { metric: 'Cost (₹K)', ...Object.fromEntries(scenarios.map(s => [s.name, s.totalCost / 1000])) },
-    { metric: 'CO₂ (kg)', ...Object.fromEntries(scenarios.map(s => [s.name, s.co2Emissions])) },
-  ];
+  // Derive display data from real API result
+  const scenarios = simResult?.scenarios || [];
+  const summary = simResult?.summary;
+  const noConsolidation = scenarios[0]; // Scenario A
+  const aiOptimised = scenarios[1];     // Scenario B
 
-  const radarData = [
-    { m: 'Cost Efficiency', 'No Consolidation': 40, 'AI Optimized': 95, 'Custom Config': 75 },
-    { m: 'Utilization',     'No Consolidation': 58, 'AI Optimized': 87, 'Custom Config': 78 },
-    { m: 'Carbon Score',    'No Consolidation': 35, 'AI Optimized': 92, 'Custom Config': 70 },
-    { m: 'SLA Compliance',  'No Consolidation': 95, 'AI Optimized': 97, 'Custom Config': 96 },
-    { m: 'Trip Efficiency', 'No Consolidation': 45, 'AI Optimized': 90, 'Custom Config': 72 },
-  ];
+  // Compute headline values from real data
+  const tripsSaved = noConsolidation && aiOptimised
+    ? noConsolidation.total_trips - aiOptimised.total_trips : 0;
+  const utilGain = summary?.utilization_gain ?? 0;
+  const costSaved = noConsolidation && aiOptimised
+    ? noConsolidation.total_cost - aiOptimised.total_cost : 0;
+  const co2Saved = noConsolidation && aiOptimised
+    ? Math.round(noConsolidation.co2_emissions - aiOptimised.co2_emissions) : 0;
+
+  // Bar chart data from real scenarios
+  const barData = scenarios.length > 0 ? [
+    { metric: 'Trips', ...Object.fromEntries(scenarios.map(s => [s.name, s.total_trips])) },
+    { metric: 'Cost (₹K)', ...Object.fromEntries(scenarios.map(s => [s.name, Math.round(s.total_cost / 1000)])) },
+    { metric: 'CO₂ (kg)', ...Object.fromEntries(scenarios.map(s => [s.name, Math.round(s.co2_emissions)])) },
+  ] : [];
+
+  // Radar chart data computed from real scenarios
+  const radarData = computeRadarData(scenarios);
 
   return (
     <>
@@ -167,8 +242,12 @@ export default function SimulatePage() {
           <p className="page-subtitle">Compare consolidation strategies &amp; visualise AI packing</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary btn-sm" onClick={run}>
-            <FlaskConical size={14} /> Run Simulation
+          <button className="btn btn-secondary btn-sm" onClick={run} disabled={isLoading}>
+            {isLoading ? (
+              <><Loader2 size={14} className="animate-spin" /> Running...</>
+            ) : (
+              <><FlaskConical size={14} /> Run Simulation</>
+            )}
           </button>
           {showPacking && (
             <button className="btn btn-primary btn-sm" onClick={animate}>
@@ -179,6 +258,60 @@ export default function SimulatePage() {
       </div>
 
       <div className="page-body" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+        {/* ── Error State ── */}
+        {error && (
+          <div className="card animate-slide-up" style={{ borderColor: '#ef4444', background: '#fef2f2' }}>
+            <div className="card-body" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <AlertCircle size={18} style={{ color: '#ef4444', flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#dc2626' }}>Simulation Error</div>
+                <div style={{ fontSize: 12, color: '#7f1d1d', marginTop: 2 }}>{error}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Loading State ── */}
+        {isLoading && (
+          <div className="card animate-slide-up" style={{ borderColor: 'rgba(99,91,255,.18)', background: '#fafaff' }}>
+            <div className="card-body" style={{ padding: '40px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+              <Loader2 size={32} className="animate-spin" style={{ color: '#635BFF' }} />
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: '#0a2540' }}>Running Scenario Simulation</div>
+                <div style={{ fontSize: 12.5, color: '#8792a2', marginTop: 4 }}>
+                  Analysing pending shipments with 3 strategies: No Consolidation, AI Optimised, and Custom Config...
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Empty State — Before first run ── */}
+        {!simResult && !isLoading && !error && (
+          <div className="card animate-slide-up" style={{ borderColor: 'rgba(99,91,255,.12)', background: '#fafaff' }}>
+            <div className="card-body" style={{ padding: '60px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: 14,
+                background: 'linear-gradient(135deg, #635BFF, #8B5CF6)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <FlaskConical size={26} color="#fff" />
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 650, color: '#0a2540', letterSpacing: '-.02em' }}>
+                  Ready to Simulate
+                </div>
+                <div style={{ fontSize: 13, color: '#8792a2', marginTop: 6, maxWidth: 420 }}>
+                  Click <strong>"Run Simulation"</strong> to analyse your pending shipments with three strategies and see real cost, trip, and CO₂ comparisons.
+                </div>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={run} style={{ marginTop: 8 }}>
+                <FlaskConical size={14} /> Run Simulation
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ── 3D Packing Panel ── */}
         {showPacking && packingData && (
@@ -239,139 +372,177 @@ export default function SimulatePage() {
           </div>
         )}
 
-        {/* ── Headline numbers ── */}
-        <div className="stat-highlight-bar stagger-children">
-          {[
-            { value: '16',    label: 'Trips saved by AI', cls: 'purple' },
-            { value: '+29%',  label: 'Utilisation gain',  cls: 'green'  },
-            { value: '₹1.4L', label: 'Daily cost savings', cls: 'amber'  },
-            { value: '800 kg',label: 'CO₂ reduced / day', cls: ''       },
-          ].map(s => (
-            <div key={s.label} className="stat-highlight-item">
-              <div className={`stat-highlight-value ${s.cls}`}>{s.value}</div>
-              <div className="stat-highlight-label">{s.label}</div>
-            </div>
-          ))}
-        </div>
+        {/* ── Headline numbers (from real data) ── */}
+        {simResult && (
+          <div className="stat-highlight-bar stagger-children">
+            {[
+              { value: `${tripsSaved}`,                        label: 'Trips saved by AI', cls: 'purple' },
+              { value: `+${utilGain.toFixed(0)}%`,             label: 'Utilisation gain',  cls: 'green'  },
+              { value: formatCostLakhs(costSaved),             label: 'Daily cost savings', cls: 'amber'  },
+              { value: `${co2Saved.toLocaleString()} kg`,      label: 'CO₂ reduced / day', cls: ''       },
+            ].map(s => (
+              <div key={s.label} className="stat-highlight-item">
+                <div className={`stat-highlight-value ${s.cls}`}>{s.value}</div>
+                <div className="stat-highlight-label">{s.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
 
-        {/* ── Scenario cards ── */}
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 650, color: '#0a2540', marginBottom: 14, letterSpacing: '-.02em' }}>Strategy comparison</h2>
-          <div className="scenario-grid stagger-children">
-            {scenarios.map((sc, i) => {
-              const isWinner = i === 1;
-              return (
-                <div
-                  key={sc.name}
-                  className={`scenario-card ${isWinner ? 'winner' : ''}`}
-                >
-                  <div className="scenario-name" style={{ color: SCENARIO_COLORS[i] }}>
-                    {sc.name}
-                    {isWinner && (
-                      <span className="badge badge-primary" style={{ marginLeft: 8, fontSize: 10 }}>
-                        <Award size={10} style={{ marginRight: 3 }} /> Best
-                      </span>
-                    )}
-                  </div>
-                  {[
-                    { l: 'Total Trips',    v: `${sc.totalTrips}` },
-                    { l: 'Avg Utilisation', v: `${sc.avgUtilization}%` },
-                    { l: 'Total Cost',     v: `₹${(sc.totalCost / 100000).toFixed(1)}L` },
-                    { l: 'CO₂ Emissions',  v: `${sc.co2Emissions.toLocaleString()} kg` },
-                    { l: 'SLA Met',        v: `${sc.deliverySlaMet}%` },
-                  ].map(m => (
-                    <div key={m.l} className="scenario-metric">
-                      <div className="scenario-metric-label">{m.l}</div>
-                      <div className="scenario-metric-value">{m.v}</div>
+        {/* ── Scenario cards (from real data) ── */}
+        {scenarios.length > 0 && (
+          <div>
+            <h2 style={{ fontSize: 16, fontWeight: 650, color: '#0a2540', marginBottom: 14, letterSpacing: '-.02em' }}>Strategy comparison</h2>
+            <div className="scenario-grid stagger-children">
+              {scenarios.map((sc, i) => {
+                const isWinner = sc.name === simResult?.best;
+                return (
+                  <div
+                    key={sc.name}
+                    className={`scenario-card ${isWinner ? 'winner' : ''}`}
+                  >
+                    <div className="scenario-name" style={{ color: SCENARIO_COLORS[i % SCENARIO_COLORS.length] }}>
+                      {sc.name}
+                      {isWinner && (
+                        <span className="badge badge-primary" style={{ marginLeft: 8, fontSize: 10 }}>
+                          <Award size={10} style={{ marginRight: 3 }} /> Best
+                        </span>
+                      )}
                     </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ── Charts row ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div className="card animate-slide-up">
-            <div className="card-header"><div className="card-title">Metric comparison</div></div>
-            <div className="card-body" style={{ height: 300 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} barGap={4}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f7" />
-                  <XAxis dataKey="metric" tick={{ fill: '#8792a2', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#8792a2', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<Tip />} />
-                  {scenarios.map((s, i) => (
-                    <Bar key={s.name} dataKey={s.name} fill={SCENARIO_COLORS[i]} radius={[4, 4, 0, 0]} barSize={26} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="card animate-slide-up">
-            <div className="card-header"><div className="card-title">Performance radar</div></div>
-            <div className="card-body" style={{ height: 300 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={radarData}>
-                  <PolarGrid stroke="#f0f3f7" />
-                  <PolarAngleAxis dataKey="m" tick={{ fill: '#8792a2', fontSize: 10 }} />
-                  <PolarRadiusAxis tick={false} axisLine={false} />
-                  {scenarios.map((s, i) => (
-                    <Radar key={s.name} name={s.name} dataKey={s.name}
-                      stroke={SCENARIO_COLORS[i]} fill={SCENARIO_COLORS[i]}
-                      fillOpacity={0.08} strokeWidth={2} />
-                  ))}
-                  <Legend wrapperStyle={{ fontSize: 11, color: '#8792a2' }} />
-                </RadarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        {/* ── AI Advantage summary ── */}
-        <div className="card" style={{ borderColor: 'rgba(99,91,255,.18)', background: '#fafaff' }}>
-          <div className="card-body" style={{ padding: '28px 28px 24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-              <div style={{
-                width: 38, height: 38, borderRadius: 10,
-                background: 'linear-gradient(135deg, #635BFF, #8B5CF6)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Zap size={18} color="#fff" />
-              </div>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 650, color: '#0a2540', letterSpacing: '-.02em' }}>
-                  AI Optimised vs No Consolidation
-                </div>
-                <div style={{ fontSize: 12.5, color: '#8792a2' }}>Savings summary</div>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, borderTop: '1px solid #e3e8ee' }}>
-              {[
-                { value: '16',    label: 'Trips saved',     pct: '34%', color: '#10b981' },
-                { value: '+29%',  label: 'Utilisation gain', pct: '50%', color: '#635BFF' },
-                { value: '₹1.4L', label: 'Cost saved / day', pct: '31%', color: '#f59e0b' },
-                { value: '800 kg',label: 'CO₂ reduced',     pct: '33%', color: '#10b981' },
-              ].map((s, i) => (
-                <div key={s.label} style={{
-                  padding: '20px 0', borderRight: i < 3 ? '1px solid #f0f3f7' : 'none',
-                  paddingLeft: i > 0 ? 20 : 0,
-                }}>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: s.color, letterSpacing: '-.03em' }}>{s.value}</div>
-                  <div style={{ fontSize: 12, color: '#8792a2', marginTop: 4 }}>
-                    {s.label}
-                    <span style={{ display: 'block', color: '#10b981', fontWeight: 600, fontSize: 11, marginTop: 2 }}>
-                      ▼ {s.pct} improvement
-                    </span>
+                    {[
+                      { l: 'Total Trips',    v: `${sc.total_trips}` },
+                      { l: 'Avg Utilisation', v: `${sc.avg_utilization}%` },
+                      { l: 'Total Cost',     v: formatCostLakhs(sc.total_cost) },
+                      { l: 'CO₂ Emissions',  v: `${Math.round(sc.co2_emissions).toLocaleString()} kg` },
+                      { l: 'SLA Met',        v: `${sc.delivery_sla_met}%` },
+                    ].map(m => (
+                      <div key={m.l} className="scenario-metric">
+                        <div className="scenario-metric-label">{m.l}</div>
+                        <div className="scenario-metric-value">{m.v}</div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
-        </div>
+        )}
+
+        {/* ── Charts row (from real data) ── */}
+        {scenarios.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div className="card animate-slide-up">
+              <div className="card-header"><div className="card-title">Metric comparison</div></div>
+              <div className="card-body" style={{ height: 300 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barData} barGap={4}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f7" />
+                    <XAxis dataKey="metric" tick={{ fill: '#8792a2', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: '#8792a2', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<Tip />} />
+                    {scenarios.map((s, i) => (
+                      <Bar key={s.name} dataKey={s.name} fill={SCENARIO_COLORS[i % SCENARIO_COLORS.length]} radius={[4, 4, 0, 0]} barSize={26} />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="card animate-slide-up">
+              <div className="card-header"><div className="card-title">Performance radar</div></div>
+              <div className="card-body" style={{ height: 300 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={radarData}>
+                    <PolarGrid stroke="#f0f3f7" />
+                    <PolarAngleAxis dataKey="m" tick={{ fill: '#8792a2', fontSize: 10 }} />
+                    <PolarRadiusAxis tick={false} axisLine={false} />
+                    {scenarios.map((s, i) => (
+                      <Radar key={s.name} name={s.name} dataKey={s.name}
+                        stroke={SCENARIO_COLORS[i % SCENARIO_COLORS.length]} fill={SCENARIO_COLORS[i % SCENARIO_COLORS.length]}
+                        fillOpacity={0.08} strokeWidth={2} />
+                    ))}
+                    <Legend wrapperStyle={{ fontSize: 11, color: '#8792a2' }} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── AI Advantage summary (from real data) ── */}
+        {simResult && summary && noConsolidation && aiOptimised && (
+          <div className="card" style={{ borderColor: 'rgba(99,91,255,.18)', background: '#fafaff' }}>
+            <div className="card-body" style={{ padding: '28px 28px 24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: 10,
+                  background: 'linear-gradient(135deg, #635BFF, #8B5CF6)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Zap size={18} color="#fff" />
+                </div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 650, color: '#0a2540', letterSpacing: '-.02em' }}>
+                    AI Optimised vs No Consolidation
+                  </div>
+                  <div style={{ fontSize: 12.5, color: '#8792a2' }}>Savings summary</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, borderTop: '1px solid #e3e8ee' }}>
+                {[
+                  {
+                    value: `${tripsSaved}`,
+                    label: 'Trips saved',
+                    pct: `${summary.trips_saved_pct}%`,
+                    color: '#10b981',
+                  },
+                  {
+                    value: `+${utilGain.toFixed(0)}%`,
+                    label: 'Utilisation gain',
+                    pct: `${Math.abs(utilGain).toFixed(0)}%`,
+                    color: '#635BFF',
+                  },
+                  {
+                    value: formatCostLakhs(costSaved),
+                    label: 'Cost saved / day',
+                    pct: `${summary.cost_saved_pct}%`,
+                    color: '#f59e0b',
+                  },
+                  {
+                    value: `${co2Saved.toLocaleString()} kg`,
+                    label: 'CO₂ reduced',
+                    pct: `${summary.co2_saved_pct}%`,
+                    color: '#10b981',
+                  },
+                ].map((s, i) => (
+                  <div key={s.label} style={{
+                    padding: '20px 0', borderRight: i < 3 ? '1px solid #f0f3f7' : 'none',
+                    paddingLeft: i > 0 ? 20 : 0,
+                  }}>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: s.color, letterSpacing: '-.03em' }}>{s.value}</div>
+                    <div style={{ fontSize: 12, color: '#8792a2', marginTop: 4 }}>
+                      {s.label}
+                      <span style={{ display: 'block', color: '#10b981', fontWeight: 600, fontSize: 11, marginTop: 2 }}>
+                        ▼ {s.pct} improvement
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Note about data source ── */}
+        {simResult?.summary?.note && (
+          <div className="card" style={{ borderColor: '#f59e0b40', background: '#fffbeb' }}>
+            <div className="card-body" style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
+              <AlertCircle size={15} style={{ color: '#f59e0b', flexShrink: 0 }} />
+              <span style={{ color: '#92400e' }}>{simResult.summary.note}</span>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

@@ -192,6 +192,42 @@ export async function getScenarios() {
   return fetchApi<any[]>("/api/scenarios");
 }
 
+export interface SimulationScenario {
+  name: string;
+  total_trips: number;
+  avg_utilization: number;
+  total_cost: number;
+  co2_emissions: number;
+  delivery_sla_met: number;
+  description?: string;
+  cluster_count?: number;
+}
+
+export interface SimulationResult {
+  scenarios: SimulationScenario[];
+  best: string;
+  summary: {
+    cost_saved_pct: number;
+    trips_saved: number;
+    trips_saved_pct: number;
+    co2_saved_pct: number;
+    utilization_gain: number;
+    note?: string;
+  };
+}
+
+export async function runScenarioSimulation(params?: {
+  origin_city?: string;
+  dest_city?: string;
+  max_detour_pct?: number;
+  dbscan_eps?: number;
+}) {
+  return fetchApi<SimulationResult>("/api/simulate", {
+    method: "POST",
+    body: JSON.stringify(params || {}),
+  });
+}
+
 // ---- Copilot ----
 
 export async function sendChatMessage(message: string, sessionId = "default") {
