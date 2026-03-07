@@ -5,7 +5,7 @@ Dynamic routing automatically detects route patterns from shipments and consolid
 
 ## How It Works
 
-1. **Route Detection**: Analyzes shipments to find route patterns
+1. **Route Detection**:      Analyzes shipments to find route     patterns
    - Groups shipments by origin→destination pairs
    - Detects if shipments can share routes through intermediate cities
    - Example: Mumbai→Solapur and Mumbai→Pune→Baramati→Solapur can share route

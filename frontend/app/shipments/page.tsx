@@ -34,6 +34,7 @@ import {
   getCities,
   downloadCSVTemplate,
   deleteShipment,
+  getVehicles,
 } from "@/lib/api";
 
 const priorityBadge: Record<string, string> = {
@@ -111,6 +112,18 @@ export default function ShipmentsPage() {
     cargo_type: "general",
   });
   const perPage = 15;
+  const [maxTruckCapacity, setMaxTruckCapacity] = useState(0);
+
+  useEffect(() => {
+    getVehicles()
+      .then((data) => {
+        if (data?.length) {
+          const maxW = Math.max(...data.map((v: any) => v.max_weight_kg || 0));
+          setMaxTruckCapacity(maxW);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     getCities()
@@ -1140,6 +1153,30 @@ export default function ShipmentsPage() {
                     >
                       Typical: 50–5000 kg
                     </div>
+                    {maxTruckCapacity > 0 &&
+                      newShipment.weight_kg > maxTruckCapacity && (
+                        <div
+                          style={{
+                            marginTop: "6px",
+                            padding: "6px 10px",
+                            background: "rgba(223,27,65,0.08)",
+                            border: "1px solid rgba(223,27,65,0.25)",
+                            borderRadius: "6px",
+                            fontSize: "11px",
+                            color: "#DF1B41",
+                            fontWeight: 600,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          <AlertCircle size={13} />
+                          No truck available! Max capacity is{" "}
+                          {maxTruckCapacity.toLocaleString()}kg. This item (
+                          {newShipment.weight_kg.toLocaleString()}kg) cannot be
+                          carried by any vehicle in your fleet.
+                        </div>
+                      )}
                   </div>
 
                   {/* Volume (auto-calculated) */}
@@ -1359,45 +1396,143 @@ export default function ShipmentsPage() {
                     </div>
                   </div>
 
-                  {/* Visual dimension preview */}
+                  {/* Visual 3D dimension preview */}
                   {newShipment.length_cm > 0 &&
                     newShipment.width_cm > 0 &&
-                    newShipment.height_cm > 0 && (
-                      <div
-                        style={{
-                          marginTop: "14px",
-                          padding: "12px 16px",
-                          background: "rgba(255,255,255,0.6)",
-                          borderRadius: "8px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                        }}
-                      >
+                    newShipment.height_cm > 0 &&
+                    (() => {
+                      const maxDim = Math.max(
+                        newShipment.length_cm,
+                        newShipment.width_cm,
+                        newShipment.height_cm,
+                      );
+                      const scale = 80 / maxDim;
+                      const w = Math.max(20, newShipment.length_cm * scale);
+                      const h = Math.max(20, newShipment.height_cm * scale);
+                      const d = Math.max(
+                        10,
+                        newShipment.width_cm * scale * 0.5,
+                      );
+                      return (
                         <div
                           style={{
+                            marginTop: "14px",
+                            padding: "16px",
+                            background: "rgba(255,255,255,0.6)",
+                            borderRadius: "8px",
                             display: "flex",
                             alignItems: "center",
-                            gap: "12px",
+                            gap: "24px",
                           }}
                         >
-                          <div
-                            style={{
-                              width: "40px",
-                              height: "40px",
-                              borderRadius: "8px",
-                              background: "var(--lorri-primary-light)",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <Package
-                              size={18}
-                              style={{ color: "var(--lorri-primary)" }}
-                            />
+                          {/* 3D CSS Box */}
+                          <div style={{ perspective: "400px", flexShrink: 0 }}>
+                            <div
+                              style={{
+                                width: w,
+                                height: h,
+                                transformStyle: "preserve-3d",
+                                transform: "rotateX(-15deg) rotateY(-30deg)",
+                                position: "relative",
+                                animation: "spin3d 8s ease-in-out infinite",
+                              }}
+                            >
+                              {/* Front */}
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  width: w,
+                                  height: h,
+                                  background:
+                                    "linear-gradient(135deg, rgba(99,91,255,0.25), rgba(99,91,255,0.15))",
+                                  border: "1.5px solid rgba(99,91,255,0.5)",
+                                  borderRadius: "2px",
+                                  transform: `translateZ(${d / 2}px)`,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "10px",
+                                  fontWeight: 700,
+                                  color: "#635BFF",
+                                }}
+                              >
+                                {newShipment.length_cm}×{newShipment.height_cm}
+                              </div>
+                              {/* Back */}
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  width: w,
+                                  height: h,
+                                  background: "rgba(99,91,255,0.08)",
+                                  border: "1.5px solid rgba(99,91,255,0.25)",
+                                  borderRadius: "2px",
+                                  transform: `translateZ(${-d / 2}px) rotateY(180deg)`,
+                                }}
+                              />
+                              {/* Left */}
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  width: d,
+                                  height: h,
+                                  background:
+                                    "linear-gradient(135deg, rgba(99,91,255,0.20), rgba(99,91,255,0.10))",
+                                  border: "1.5px solid rgba(99,91,255,0.35)",
+                                  borderRadius: "2px",
+                                  transform: `translateX(${-d / 2}px) rotateY(-90deg)`,
+                                }}
+                              />
+                              {/* Right */}
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  width: d,
+                                  height: h,
+                                  background: "rgba(99,91,255,0.12)",
+                                  border: "1.5px solid rgba(99,91,255,0.3)",
+                                  borderRadius: "2px",
+                                  transform: `translateX(${w - d / 2}px) rotateY(90deg)`,
+                                }}
+                              />
+                              {/* Top */}
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  width: w,
+                                  height: d,
+                                  background:
+                                    "linear-gradient(135deg, rgba(99,91,255,0.30), rgba(139,92,246,0.18))",
+                                  border: "1.5px solid rgba(99,91,255,0.45)",
+                                  borderRadius: "2px",
+                                  transform: `translateY(${-d / 2}px) rotateX(90deg)`,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "9px",
+                                  fontWeight: 600,
+                                  color: "#635BFF",
+                                }}
+                              >
+                                {newShipment.width_cm}
+                              </div>
+                              {/* Bottom */}
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  width: w,
+                                  height: d,
+                                  background: "rgba(99,91,255,0.06)",
+                                  border: "1.5px solid rgba(99,91,255,0.2)",
+                                  borderRadius: "2px",
+                                  transform: `translateY(${h - d / 2}px) rotateX(-90deg)`,
+                                }}
+                              />
+                            </div>
                           </div>
-                          <div>
+
+                          {/* Info */}
+                          <div style={{ flex: 1 }}>
                             <div
                               style={{
                                 fontSize: "14px",
@@ -1413,6 +1548,7 @@ export default function ShipmentsPage() {
                               style={{
                                 fontSize: "12px",
                                 color: "var(--text-secondary)",
+                                marginTop: "4px",
                               }}
                             >
                               Volume:{" "}
@@ -1424,37 +1560,41 @@ export default function ShipmentsPage() {
                                 )}{" "}
                                 m³
                               </strong>
+                              <span
+                                style={{
+                                  marginLeft: "8px",
+                                  color: "var(--lorri-primary)",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                (
+                                {(
+                                  computedVolume(
+                                    newShipment.length_cm,
+                                    newShipment.width_cm,
+                                    newShipment.height_cm,
+                                  ) * 1000
+                                ).toFixed(0)}{" "}
+                                liters)
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "12px",
+                                marginTop: "8px",
+                                fontSize: "11px",
+                                color: "var(--text-tertiary)",
+                              }}
+                            >
+                              <span>L: {newShipment.length_cm}cm</span>
+                              <span>W: {newShipment.width_cm}cm</span>
+                              <span>H: {newShipment.height_cm}cm</span>
                             </div>
                           </div>
                         </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div
-                            style={{
-                              fontSize: "11px",
-                              color: "var(--text-tertiary)",
-                            }}
-                          >
-                            Estimated
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "13px",
-                              fontWeight: 600,
-                              color: "var(--lorri-primary)",
-                            }}
-                          >
-                            {(
-                              computedVolume(
-                                newShipment.length_cm,
-                                newShipment.width_cm,
-                                newShipment.height_cm,
-                              ) * 1000
-                            ).toFixed(0)}{" "}
-                            liters
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                 </div>
 
                 {/* Other Fields */}

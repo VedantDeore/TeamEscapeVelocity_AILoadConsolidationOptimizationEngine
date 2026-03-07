@@ -107,13 +107,15 @@ def optimize():
             v = sb.table("vehicles").select("*").eq("id", c_data["vehicle_id"]).single().execute()
             vehicle = v.data or {}
 
-        # Fetch first depot
+        # Fetch all depots (for open-ended multi-depot routing)
+        all_depots = []
         depot = None
-        d_result = sb.table("depots").select("*").limit(1).execute()
+        d_result = sb.table("depots").select("*").execute()
         if d_result.data:
-            depot = d_result.data[0]
+            all_depots = d_result.data
+            depot = all_depots[0]
 
-        route = optimize_route(shps, vehicle, depot)
+        route = optimize_route(shps, vehicle, depot, all_depots=all_depots)
 
         # Persist updated route
         existing = sb.table("routes").select("id").eq("cluster_id", cluster_id).execute()

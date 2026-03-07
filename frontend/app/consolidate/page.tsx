@@ -38,6 +38,7 @@ import {
   submitClusterFeedback,
   getVehicles,
   checkReadiness,
+  editCluster,
 } from "@/lib/api";
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -103,6 +104,12 @@ export default function ConsolidationPage() {
   } | null>(null);
   const [runStage, setRunStage] = useState(0);
   const [runError, setRunError] = useState<string | null>(null);
+  const [editingCluster, setEditingCluster] = useState<Cluster | null>(null);
+  const [editRemoveIds, setEditRemoveIds] = useState<string[]>([]);
+  const [editVehicleId, setEditVehicleId] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [overweightWarnings, setOverweightWarnings] = useState<any[]>([]);
+  const [allVehicles, setAllVehicles] = useState<any[]>([]);
 
   const RUN_STAGES = [
     { label: "Fetching pending shipments from database...", pct: 10 },
@@ -118,6 +125,7 @@ export default function ConsolidationPage() {
     getVehicles()
       .then((data) => {
         if (data?.length) {
+          setAllVehicles(data);
           const map: Record<string, { max_weight_kg: number; name: string }> =
             {};
           data.forEach((v: any) => {
@@ -193,6 +201,7 @@ export default function ConsolidationPage() {
     setShowResults(false);
     setRunError(null);
     setRunStage(0);
+    setOverweightWarnings([]);
 
     // Animate through stages
     const stageInterval = setInterval(() => {
@@ -206,6 +215,9 @@ export default function ConsolidationPage() {
       .then((data) => {
         clearInterval(stageInterval);
         if (data && data.clusters && data.clusters.length > 0) {
+          if (data.overweight_warnings && data.overweight_warnings.length > 0) {
+            setOverweightWarnings(data.overweight_warnings);
+          }
           const mapped: ConsolidationPlan = {
             id: data.id || data.plan_id || "",
             name: data.name || "New Consolidation Plan",
@@ -278,6 +290,30 @@ export default function ConsolidationPage() {
         }
       })
       .catch(() => {});
+  };
+
+  const openClusterEdit = (cluster: Cluster) => {
+    setEditingCluster(cluster);
+    setEditRemoveIds([]);
+    setEditVehicleId(cluster.vehicleId || "");
+  };
+
+  const handleSaveClusterEdit = async () => {
+    if (!editingCluster) return;
+    setEditSaving(true);
+    try {
+      const payload: any = {};
+      if (editRemoveIds.length > 0) payload.remove_shipment_ids = editRemoveIds;
+      if (editVehicleId && editVehicleId !== editingCluster.vehicleId)
+        payload.vehicle_id = editVehicleId;
+      await editCluster(editingCluster.id, payload);
+      setEditingCluster(null);
+      loadLatestPlan();
+    } catch {
+      // error
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const hasRejectedClusters = plan.clusters.some(
@@ -903,6 +939,71 @@ export default function ConsolidationPage() {
         {/* ── Results ── */}
         {showResults && !isRunning && (
           <div className="animate-slide-up">
+            {/* Overweight Warnings */}
+            {overweightWarnings.length > 0 && (
+              <div
+                style={{
+                  background: "rgba(239, 68, 68, 0.08)",
+                  border: "1px solid rgba(239, 68, 68, 0.3)",
+                  borderRadius: "12px",
+                  padding: "16px 20px",
+                  marginBottom: "20px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    marginBottom: "10px",
+                    fontWeight: 700,
+                    color: "#ef4444",
+                    fontSize: "14px",
+                  }}
+                >
+                  <AlertTriangle size={18} />
+                  {overweightWarnings.length} shipment
+                  {overweightWarnings.length > 1 ? "s" : ""} exceed
+                  {overweightWarnings.length === 1 ? "s" : ""} vehicle capacity
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px",
+                  }}
+                >
+                  {overweightWarnings.map((w: any, i: number) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        background: "rgba(239, 68, 68, 0.06)",
+                        borderRadius: "8px",
+                        padding: "8px 14px",
+                        fontSize: "13px",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      <Package
+                        size={14}
+                        style={{ color: "#ef4444", flexShrink: 0 }}
+                      />
+                      <span>
+                        <strong style={{ color: "var(--text-primary)" }}>
+                          {w.shipment_code || w.shipment_id}
+                        </strong>{" "}
+                        — {w.weight_kg?.toLocaleString()}kg (max truck capacity:{" "}
+                        {w.max_vehicle_capacity?.toLocaleString()}kg)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Before vs After + Chart Row */}
             <div
               style={{
@@ -1438,6 +1539,127 @@ export default function ConsolidationPage() {
                           ))}
                         </div>
 
+                        {/* Load Distribution Animation */}
+                        {(() => {
+                          const vehCapacity =
+                            vehiclesMap[cluster.vehicleId]?.max_weight_kg ||
+                            cluster.totalWeight;
+                          const nItems = cluster.shipmentIds.length;
+                          const avgWeight =
+                            nItems > 0 ? cluster.totalWeight / nItems : 0;
+                          const COLORS = [
+                            "#635BFF",
+                            "#0CAF60",
+                            "#E5850B",
+                            "#00A2E8",
+                            "#FF6B35",
+                            "#9B59B6",
+                            "#1ABC9C",
+                            "#DF1B41",
+                          ];
+                          return (
+                            <div
+                              style={{
+                                marginBottom: "14px",
+                                padding: "10px 12px",
+                                background: "var(--bg-secondary)",
+                                borderRadius: "8px",
+                                border: "1px solid var(--border-secondary)",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: "10px",
+                                  fontWeight: 700,
+                                  color: "var(--text-tertiary)",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.5px",
+                                  marginBottom: "8px",
+                                }}
+                              >
+                                Load Distribution — {cluster.shipmentIds.length}{" "}
+                                items → {vehCapacity.toLocaleString()}kg
+                                capacity
+                              </div>
+                              {/* Stacked bar */}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  height: "18px",
+                                  borderRadius: "4px",
+                                  overflow: "hidden",
+                                  background: "rgba(0,0,0,0.04)",
+                                  marginBottom: "6px",
+                                }}
+                              >
+                                {cluster.shipmentIds.map((sid, i) => {
+                                  const pct = (avgWeight / vehCapacity) * 100;
+                                  return (
+                                    <div
+                                      key={sid}
+                                      title={`${sid.slice(0, 8).toUpperCase()}: ~${Math.round(avgWeight)}kg`}
+                                      style={{
+                                        width: `${pct}%`,
+                                        background: COLORS[i % COLORS.length],
+                                        opacity: 0.85,
+                                        borderRight:
+                                          i < nItems - 1
+                                            ? "1px solid rgba(255,255,255,0.5)"
+                                            : "none",
+                                        animation: `growWidth 0.6s ease-out ${i * 0.1}s both`,
+                                        transition: "width 0.3s ease",
+                                      }}
+                                    />
+                                  );
+                                })}
+                              </div>
+                              {/* Legend */}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexWrap: "wrap",
+                                  gap: "6px",
+                                }}
+                              >
+                                {cluster.shipmentIds
+                                  .slice(0, 6)
+                                  .map((sid, i) => (
+                                    <div
+                                      key={sid}
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "3px",
+                                        fontSize: "9px",
+                                        color: "var(--text-secondary)",
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          width: 6,
+                                          height: 6,
+                                          borderRadius: 2,
+                                          background: COLORS[i % COLORS.length],
+                                        }}
+                                      />
+                                      {sid.slice(0, 6).toUpperCase()}
+                                    </div>
+                                  ))}
+                                {cluster.shipmentIds.length > 6 && (
+                                  <span
+                                    style={{
+                                      fontSize: "9px",
+                                      color: "var(--text-tertiary)",
+                                    }}
+                                  >
+                                    +{cluster.shipmentIds.length - 6} more
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {/* Expand/Collapse */}
                         <button
                           className="btn btn-ghost btn-sm"
@@ -1517,6 +1739,7 @@ export default function ConsolidationPage() {
                             <button
                               className="btn btn-sm btn-secondary"
                               style={{ flex: 1 }}
+                              onClick={() => openClusterEdit(cluster)}
                             >
                               <Edit size={12} /> Modify
                             </button>
@@ -1723,6 +1946,224 @@ export default function ConsolidationPage() {
           </div>
         )}
       </div>
+
+      {/* ── Edit Cluster Modal ── */}
+      {editingCluster && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(10,37,64,0.55)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+          }}
+          onClick={() => setEditingCluster(null)}
+        >
+          <div
+            className="card animate-slide-up"
+            style={{
+              width: "600px",
+              maxWidth: "94vw",
+              maxHeight: "85vh",
+              overflowY: "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="card-header"
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <div className="card-title">Edit Cluster</div>
+                <div className="card-description">
+                  Remove shipments or change vehicle assignment
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setEditingCluster(null)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="card-body" style={{ padding: "20px" }}>
+              {/* Vehicle Selection */}
+              <div style={{ marginBottom: "20px" }}>
+                <label
+                  className="label"
+                  style={{
+                    marginBottom: "8px",
+                    display: "block",
+                    fontWeight: 700,
+                  }}
+                >
+                  <Truck
+                    size={14}
+                    style={{ marginRight: "6px", verticalAlign: "middle" }}
+                  />
+                  Assigned Vehicle
+                </label>
+                <select
+                  className="input"
+                  value={editVehicleId}
+                  onChange={(e) => setEditVehicleId(e.target.value)}
+                  style={{ width: "100%" }}
+                >
+                  <option value="">Select vehicle...</option>
+                  {allVehicles
+                    .filter((v: any) => v.is_available !== false)
+                    .map((v: any) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name} — {v.max_weight_kg?.toLocaleString()}kg /{" "}
+                        {v.max_volume_m3}m³
+                      </option>
+                    ))}
+                </select>
+                {editVehicleId &&
+                  editVehicleId !== editingCluster.vehicleId && (
+                    <div
+                      style={{
+                        marginTop: "6px",
+                        fontSize: "11px",
+                        color: "var(--lorri-primary)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Vehicle will be changed from &quot;
+                      {editingCluster.vehicleName}&quot;
+                    </div>
+                  )}
+              </div>
+
+              {/* Shipments List */}
+              <div>
+                <label
+                  className="label"
+                  style={{
+                    marginBottom: "8px",
+                    display: "block",
+                    fontWeight: 700,
+                  }}
+                >
+                  <Package
+                    size={14}
+                    style={{ marginRight: "6px", verticalAlign: "middle" }}
+                  />
+                  Shipments (
+                  {editingCluster.shipmentIds.length - editRemoveIds.length}{" "}
+                  remaining)
+                </label>
+                <div
+                  style={{
+                    background: "var(--bg-secondary)",
+                    borderRadius: "8px",
+                    border: "1px solid var(--border-secondary)",
+                    overflow: "hidden",
+                  }}
+                >
+                  {editingCluster.shipmentIds.map((sid) => {
+                    const isRemoved = editRemoveIds.includes(sid);
+                    return (
+                      <div
+                        key={sid}
+                        style={{
+                          padding: "10px 14px",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          borderBottom: "1px solid var(--border-secondary)",
+                          opacity: isRemoved ? 0.4 : 1,
+                          textDecoration: isRemoved ? "line-through" : "none",
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontFamily: "monospace",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: "var(--lorri-primary)",
+                          }}
+                        >
+                          {sid.slice(0, 8).toUpperCase()}
+                        </span>
+                        <button
+                          className={`btn btn-sm ${isRemoved ? "btn-success" : "btn-danger"}`}
+                          style={{ padding: "2px 10px", fontSize: "11px" }}
+                          onClick={() => {
+                            if (isRemoved) {
+                              setEditRemoveIds((prev) =>
+                                prev.filter((id) => id !== sid),
+                              );
+                            } else {
+                              if (
+                                editingCluster.shipmentIds.length -
+                                  editRemoveIds.length <=
+                                1
+                              )
+                                return;
+                              setEditRemoveIds((prev) => [...prev, sid]);
+                            }
+                          }}
+                        >
+                          {isRemoved ? "Undo" : "Remove"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                {editRemoveIds.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      fontSize: "11px",
+                      color: "var(--lorri-danger)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {editRemoveIds.length} shipment(s) will be returned to
+                    pending
+                  </div>
+                )}
+              </div>
+            </div>
+            <div
+              style={{
+                padding: "16px 20px",
+                borderTop: "1px solid var(--border-secondary)",
+                display: "flex",
+                gap: "10px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                className="btn btn-secondary"
+                onClick={() => setEditingCluster(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSaveClusterEdit}
+                disabled={
+                  editSaving ||
+                  (editRemoveIds.length === 0 &&
+                    editVehicleId === editingCluster.vehicleId)
+                }
+              >
+                {editSaving ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

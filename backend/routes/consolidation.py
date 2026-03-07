@@ -7,6 +7,7 @@ from services.bin_packing import pack_cluster
 from services.vrp_solver   import optimize_route
 from services.carbon       import calculate_emissions
 from datetime import datetime, timezone
+import math
 
 consolidation_bp = Blueprint("consolidation", __name__)
 
@@ -44,6 +45,38 @@ def _get_first_depot(sb) -> dict | None:
         return result.data[0] if result.data else None
     except Exception:
         return None
+
+
+def _get_all_depots(sb) -> list:
+    """Fetch all depots from database."""
+    try:
+        result = sb.table("depots").select("*").execute()
+        return result.data or []
+    except Exception:
+        return []
+
+
+def _haversine_km(lat1, lng1, lat2, lng2) -> float:
+    """Haversine distance in km between two coordinates."""
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _get_nearest_depot(depots: list, lat: float, lng: float) -> dict | None:
+    """Find the depot nearest to the given lat/lng."""
+    if not depots:
+        return None
+    best = None
+    best_dist = float("inf")
+    for d in depots:
+        dist = _haversine_km(lat, lng, d.get("lat", 0), d.get("lng", 0))
+        if dist < best_dist:
+            best_dist = dist
+            best = d
+    return best
 
 
 def _get_all_vehicles(sb) -> list:
@@ -123,6 +156,20 @@ def run_consolidation():
 
     n_shipments_before = sb.table("shipments").select("id", count="exact").execute().count or len(shipments)
 
+    # Check for oversized shipments that no vehicle can carry
+    max_vehicle_weight = max((v.get("max_weight_kg", 0) for v in vehicles), default=0)
+    overweight_warnings = []
+    for s in shipments:
+        w = s.get("weight_kg", 0)
+        if w > max_vehicle_weight:
+            overweight_warnings.append({
+                "shipment_id": s.get("id"),
+                "shipment_code": s.get("shipment_code", ""),
+                "weight_kg": w,
+                "max_vehicle_kg": max_vehicle_weight,
+                "message": f"Shipment {s.get('shipment_code', s.get('id', '')[:8])} weighs {w}kg but largest truck can only carry {max_vehicle_weight}kg",
+            })
+
     # Before metrics: count unique trips if no consolidation
     trips_before = len(shipments)
     cost_before  = trips_before * 9500   # rough avg per-trip cost
@@ -135,7 +182,8 @@ def run_consolidation():
         return jsonify({"error": "Clustering produced no groups"}), 500
 
     # --- 3. Prepare carbon inputs ---
-    depot = _get_first_depot(sb)
+    all_depots = _get_all_depots(sb)
+    fallback_depot = _get_first_depot(sb)
 
     cluster_co2_inputs = []
     for c in clusters:
@@ -206,8 +254,11 @@ def run_consolidation():
         # 3D bin packing
         packing = pack_cluster(c["shipments"], db_vehicle)
 
+        # Pick nearest depot for this cluster
+        depot = _get_nearest_depot(all_depots, c.get("centroid_lat", 0), c.get("centroid_lng", 0)) or fallback_depot
+
         # VRP route optimisation
-        route   = optimize_route(c["shipments"], db_vehicle, depot)
+        route   = optimize_route(c["shipments"], db_vehicle, depot, all_depots=all_depots)
 
         dist_km        = route["total_distance_km"]
         est_cost       = dist_km * float(db_vehicle.get("cost_per_km", 24))
@@ -316,10 +367,85 @@ def run_consolidation():
         "co2_saved":         emission_data["co2_saved"],
         "green_score":       emission_data["green_score"],
         "clusters":          cluster_results,
+        "overweight_warnings": overweight_warnings,
     }), 201
 
 
 # ── feedback ───────────────────────────────────────────────
+
+@consolidation_bp.route("/api/clusters/<cluster_id>", methods=["PATCH"])
+def edit_cluster(cluster_id):
+    """Edit a cluster: remove shipments or change vehicle."""
+    sb = get_supabase()
+    data = request.get_json() or {}
+
+    try:
+        # Remove shipments from cluster
+        remove_ids = data.get("remove_shipment_ids", [])
+        if remove_ids:
+            for sid in remove_ids:
+                sb.table("cluster_shipments").delete().eq("cluster_id", cluster_id).eq("shipment_id", sid).execute()
+                sb.table("shipments").update({"status": "pending"}).eq("id", sid).execute()
+
+            # Recalculate cluster weight/volume from remaining shipments
+            remaining = sb.table("cluster_shipments").select("shipment_id").eq("cluster_id", cluster_id).execute()
+            remaining_ids = [r["shipment_id"] for r in (remaining.data or [])]
+
+            if not remaining_ids:
+                # Cluster is now empty — delete it
+                sb.table("clusters").delete().eq("id", cluster_id).execute()
+                return jsonify({"status": "deleted", "message": "Cluster removed (no shipments left)"})
+
+            shipments = sb.table("shipments").select("*").in_("id", remaining_ids).execute()
+            total_weight = sum(s.get("weight_kg", 0) for s in (shipments.data or []))
+            total_volume = sum(s.get("volume_m3", 0) for s in (shipments.data or []))
+
+            # Get vehicle capacity
+            cluster_data = sb.table("clusters").select("vehicle_id").eq("id", cluster_id).limit(1).execute()
+            vid = cluster_data.data[0].get("vehicle_id") if cluster_data.data else None
+            max_w, max_v = 12000, 42
+            if vid:
+                v = sb.table("vehicles").select("max_weight_kg,max_volume_m3").eq("id", vid).limit(1).execute()
+                if v.data:
+                    max_w = v.data[0].get("max_weight_kg", 12000)
+                    max_v = v.data[0].get("max_volume_m3", 42)
+
+            util = round(max(total_weight / max_w, total_volume / max_v if max_v else 0) * 100, 1)
+            sb.table("clusters").update({
+                "total_weight": round(total_weight, 2),
+                "total_volume": round(total_volume, 3),
+                "utilization_pct": util,
+            }).eq("id", cluster_id).execute()
+
+        # Change vehicle
+        new_vehicle_id = data.get("vehicle_id")
+        if new_vehicle_id:
+            v = sb.table("vehicles").select("*").eq("id", new_vehicle_id).limit(1).execute()
+            if v.data:
+                veh = v.data[0]
+                # Recalculate utilization with new vehicle
+                cluster_info = sb.table("clusters").select("total_weight,total_volume").eq("id", cluster_id).limit(1).execute()
+                if cluster_info.data:
+                    tw = cluster_info.data[0].get("total_weight", 0)
+                    tv = cluster_info.data[0].get("total_volume", 0)
+                    max_w = veh.get("max_weight_kg", 12000)
+                    max_v = veh.get("max_volume_m3", 42)
+                    util = round(max(tw / max_w, tv / max_v if max_v else 0) * 100, 1)
+                    sb.table("clusters").update({
+                        "vehicle_id": new_vehicle_id,
+                        "vehicle_name": veh.get("name", "Unknown"),
+                        "utilization_pct": util,
+                    }).eq("id", cluster_id).execute()
+
+        # Fetch updated cluster
+        updated = sb.table("clusters").select("*").eq("id", cluster_id).limit(1).execute()
+        cs = sb.table("cluster_shipments").select("shipment_id").eq("cluster_id", cluster_id).execute()
+        result = updated.data[0] if updated.data else {}
+        result["shipment_ids"] = [r["shipment_id"] for r in (cs.data or [])]
+        return jsonify({"status": "ok", "cluster": result})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 @consolidation_bp.route("/api/clusters/<cluster_id>/feedback", methods=["POST"])
 def submit_feedback(cluster_id):

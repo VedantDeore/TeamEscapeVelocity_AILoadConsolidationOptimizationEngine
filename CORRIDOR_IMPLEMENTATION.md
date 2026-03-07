@@ -2,7 +2,7 @@
 
 ## Overview
 
-This implementation adds **corridor-based consolidation** alongside the existing DBSCAN + VRP approach. This provides a more realistic solution for Indian logistics where trucks run on fixed routes.
+This implementation adds **corridor-based consolidation** alongside the existing DBSCAN + VRP approach. This provides a more realistic solution for Indian logistics where trucks     run on fixed routes.
 
 ## What Was Implemented
 

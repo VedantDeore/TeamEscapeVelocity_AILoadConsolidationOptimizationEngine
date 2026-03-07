@@ -171,7 +171,8 @@ def _ortools_solve(stops: list, vehicle_capacity_kg: float,
 # ── public entry point ─────────────────────────────────────
 
 def optimize_route(cluster_shipments: list, vehicle: dict,
-                   depot: dict | None = None) -> dict:
+                   depot: dict | None = None,
+                   all_depots: list | None = None) -> dict:
     """
     Optimise the pickup/delivery route for a cluster.
 
@@ -298,8 +299,29 @@ def optimize_route(cluster_shipments: list, vehicle: dict,
     delivery_order = two_opt(delivery_stops, delivery_order)
     ordered_deliveries = [delivery_stops[i] for i in delivery_order]
 
-    # ── Assemble final route: Depot → Pickups → Deliveries → Depot ──
-    depot_end = dict(depot_stop)  # copy so sequence doesn't overwrite start
+    # ── Determine end depot (nearest depot to last delivery) ──
+    last_delivery = ordered_deliveries[-1] if ordered_deliveries else (ordered_pickups[-1] if ordered_pickups else depot_stop)
+    if all_depots and len(all_depots) > 1:
+        best_end = None
+        best_dist = float("inf")
+        for d in all_depots:
+            dist = _haversine_km(last_delivery["lat"], last_delivery["lng"],
+                                 d.get("lat", 0), d.get("lng", 0))
+            if dist < best_dist:
+                best_dist = dist
+                best_end = d
+        if best_end:
+            depot_end = {
+                "lat":  best_end.get("lat", depot_stop["lat"]),
+                "lng":  best_end.get("lng", depot_stop["lng"]),
+                "city": best_end.get("city", depot_stop["city"]),
+                "type": "depot",
+            }
+        else:
+            depot_end = dict(depot_stop)
+    else:
+        depot_end = dict(depot_stop)
+
     all_stops = [depot_stop] + ordered_pickups + ordered_deliveries + [depot_end]
 
     # ── Calculate distance & load tracking ──
