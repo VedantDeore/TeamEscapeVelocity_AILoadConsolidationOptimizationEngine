@@ -179,4 +179,237 @@ def run_scenarios(shipments: list, constraints: dict | None = None) -> dict:
         "scenarios": [sc_a, sc_b, sc_c],
         "best":      "AI Optimised",
         "summary":   summary,
+Scenario Simulation Engine
+===========================
+
+Runs what-if scenarios comparing different packing strategies,
+vehicle assignments, and consolidation approaches.
+
+Features:
+  - Compare greedy vs SA vs hybrid algorithms
+  - Simulate no-consolidation baseline
+  - Compute cost, CO2, utilization metrics per scenario
+  - Generate demo comparison data
+"""
+
+from __future__ import annotations
+
+import random
+import logging
+from services.bin_packing import (
+    Container3D,
+    Item3D,
+    pack_items,
+    greedy_pack,
+    create_items_from_shipments,
+    create_container_from_vehicle,
+    ITEM_COLORS,
+)
+
+logger = logging.getLogger(__name__)
+
+# ── Default vehicle fleet ─────────────────────────────────────────────────
+DEFAULT_VEHICLES = [
+    {"id": "v1", "name": "Tata 407", "widthCm": 180, "heightCm": 180, "lengthCm": 430, "maxWeightKg": 2500, "costPerKm": 12, "emissionFactor": 0.09},
+    {"id": "v2", "name": "Eicher 10.59", "widthCm": 230, "heightCm": 200, "lengthCm": 600, "maxWeightKg": 7000, "costPerKm": 18, "emissionFactor": 0.075},
+    {"id": "v3", "name": "Ashok Leyland 1612", "widthCm": 240, "heightCm": 240, "lengthCm": 720, "maxWeightKg": 12000, "costPerKm": 24, "emissionFactor": 0.062},
+]
+
+
+def _generate_items(count: int) -> list[dict]:
+    """Generate random shipment dicts."""
+    cargo_types = ["general", "fragile", "refrigerated", "hazardous"]
+    priorities = ["normal", "express", "critical"]
+    items = []
+    for i in range(count):
+        items.append({
+            "id": f"shp-{i+1:04d}",
+            "shipmentCode": f"SHP-{i+1:04d}",
+            "widthCm": random.randint(40, 160),
+            "heightCm": random.randint(30, 120),
+            "lengthCm": random.randint(50, 200),
+            "weightKg": random.randint(50, 3000),
+            "cargoType": random.choice(cargo_types),
+            "priority": random.choice(priorities),
+        })
+    return items
+
+
+def run_scenario(scenario_config: dict) -> dict:
+    """
+    Run a single packing scenario and return metrics.
+
+    Args:
+        scenario_config: {
+            "name": "Scenario Name",
+            "container": { container dict },
+            "items": [ item dicts ],
+            "algorithm": "greedy" | "sa" | "hybrid",
+            "sa_iterations": 500,
+            "avg_distance_km": 800,
+        }
+
+    Returns:
+        Dict with packing result + computed logistics metrics.
+    """
+    name = scenario_config.get("name", "Unnamed")
+    container_data = scenario_config.get("container", DEFAULT_VEHICLES[2])
+    items_data = scenario_config.get("items", [])
+    algorithm = scenario_config.get("algorithm", "hybrid")
+    sa_iterations = int(scenario_config.get("sa_iterations", 500))
+    avg_distance = float(scenario_config.get("avg_distance_km", 800))
+
+    container = create_container_from_vehicle(container_data)
+    items = create_items_from_shipments(items_data)
+
+    result = pack_items(
+        container, items,
+        algorithm=algorithm,
+        sa_iterations=sa_iterations,
+    )
+
+    # Compute logistics metrics
+    cost_per_km = float(container_data.get("costPerKm", 24))
+    emission_factor = float(container_data.get("emissionFactor", 0.062))
+    trip_cost = cost_per_km * avg_distance
+    co2_kg = emission_factor * avg_distance
+
+    return {
+        "name": name,
+        "algorithm": algorithm,
+        "packing": result.to_dict(),
+        "logistics_metrics": {
+            "trip_cost": round(trip_cost, 2),
+            "co2_kg": round(co2_kg, 2),
+            "volume_utilization_pct": round(result.volume_utilization, 2),
+            "weight_utilization_pct": round(result.weight_utilization, 2),
+            "items_packed": len(result.placements),
+            "items_unpacked": len(result.unpacked_items),
+            "computation_time_ms": round(result.computation_time_ms, 2),
+        },
+    }
+
+
+def compare_scenarios(config: dict) -> dict:
+    """
+    Compare multiple scenarios with the same items and container.
+
+    Args:
+        config: {
+            "container": { ... },
+            "items": [{ ... }],
+            "scenarios": [
+                { "name": "Greedy", "algorithm": "greedy" },
+                { "name": "AI Hybrid", "algorithm": "hybrid" }
+            ]
+        }
+    """
+    container_data = config.get("container", DEFAULT_VEHICLES[2])
+    items_data = config.get("items", [])
+    scenarios = config.get("scenarios", [
+        {"name": "Greedy (No Optimization)", "algorithm": "greedy"},
+        {"name": "AI Hybrid (SA + EP)", "algorithm": "hybrid"},
+    ])
+
+    results = []
+    for scenario in scenarios:
+        scenario_config = {
+            "name": scenario.get("name", "Unnamed"),
+            "container": container_data,
+            "items": items_data,
+            "algorithm": scenario.get("algorithm", "hybrid"),
+            "sa_iterations": scenario.get("sa_iterations", 500),
+            "avg_distance_km": config.get("avg_distance_km", 800),
+        }
+        results.append(run_scenario(scenario_config))
+
+    # Find best scenario
+    best_idx = max(
+        range(len(results)),
+        key=lambda i: results[i]["logistics_metrics"]["volume_utilization_pct"],
+    )
+
+    return {
+        "scenarios": results,
+        "best_scenario": results[best_idx]["name"],
+        "best_utilization": results[best_idx]["logistics_metrics"]["volume_utilization_pct"],
+    }
+
+
+def generate_demo_scenario_data(num_items: int = 15) -> dict:
+    """
+    Generate a full demo comparison: no consolidation vs greedy vs AI hybrid.
+    """
+    items_data = _generate_items(num_items)
+    container_data = DEFAULT_VEHICLES[2]  # Ashok Leyland 1612
+    container = create_container_from_vehicle(container_data)
+    items = create_items_from_shipments(items_data)
+
+    # Scenario 1: No consolidation (one item per trip)
+    no_consol_trips = len(items)
+    total_weight = sum(it.weight for it in items)
+    avg_distance = 800
+    cost_per_km = 24
+    emission_factor = 0.062
+    no_consol_cost = no_consol_trips * cost_per_km * avg_distance
+    no_consol_co2 = no_consol_trips * emission_factor * avg_distance
+    avg_item_vol = sum(it.volume for it in items) / len(items) if items else 0
+    no_consol_util = min((avg_item_vol / container.volume) * 100, 100) if container.volume else 0
+
+    # Scenario 2: Greedy packing
+    greedy_result = pack_items(container, items, algorithm="greedy")
+    greedy_trips = 1 + len(greedy_result.unpacked_items) // max(len(greedy_result.placements), 1)
+    greedy_cost = greedy_trips * cost_per_km * avg_distance
+    greedy_co2 = greedy_trips * emission_factor * avg_distance
+
+    # Scenario 3: AI Hybrid
+    hybrid_result = pack_items(container, items, algorithm="hybrid", sa_iterations=400)
+    hybrid_trips = 1 + len(hybrid_result.unpacked_items) // max(len(hybrid_result.placements), 1)
+    hybrid_cost = hybrid_trips * cost_per_km * avg_distance
+    hybrid_co2 = hybrid_trips * emission_factor * avg_distance
+
+    return {
+        "scenarios": [
+            {
+                "name": "No Consolidation",
+                "total_trips": no_consol_trips,
+                "avg_utilization": round(no_consol_util, 1),
+                "total_cost": round(no_consol_cost),
+                "co2_emissions": round(no_consol_co2, 1),
+                "delivery_sla_met": 95,
+                "items_packed": len(items),
+                "items_unpacked": 0,
+                "computation_time_ms": 0,
+            },
+            {
+                "name": "Greedy Packing",
+                "total_trips": greedy_trips,
+                "avg_utilization": round(greedy_result.volume_utilization, 1),
+                "total_cost": round(greedy_cost),
+                "co2_emissions": round(greedy_co2, 1),
+                "delivery_sla_met": 96,
+                "items_packed": len(greedy_result.placements),
+                "items_unpacked": len(greedy_result.unpacked_items),
+                "computation_time_ms": round(greedy_result.computation_time_ms, 2),
+                "packing": greedy_result.to_dict(),
+            },
+            {
+                "name": "AI Optimized",
+                "total_trips": hybrid_trips,
+                "avg_utilization": round(hybrid_result.volume_utilization, 1),
+                "total_cost": round(hybrid_cost),
+                "co2_emissions": round(hybrid_co2, 1),
+                "delivery_sla_met": 97,
+                "items_packed": len(hybrid_result.placements),
+                "items_unpacked": len(hybrid_result.unpacked_items),
+                "computation_time_ms": round(hybrid_result.computation_time_ms, 2),
+                "packing": hybrid_result.to_dict(),
+            },
+        ],
+        "savings": {
+            "trips_saved": no_consol_trips - hybrid_trips,
+            "cost_saved": round(no_consol_cost - hybrid_cost),
+            "co2_saved": round(no_consol_co2 - hybrid_co2, 1),
+            "utilization_gain": round(hybrid_result.volume_utilization - no_consol_util, 1),
+        },
     }
