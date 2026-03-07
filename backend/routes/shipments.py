@@ -143,8 +143,30 @@ def update_shipment(shipment_id):
 @shipments_bp.route("/api/shipments/<shipment_id>", methods=["DELETE"])
 def delete_shipment(shipment_id):
     sb = get_supabase()
-    sb.table("shipments").delete().eq("id", shipment_id).execute()
-    return jsonify({"status": "deleted"}), 200
+    try:
+        # First check if shipment exists
+        check_result = sb.table("shipments").select("id").eq("id", shipment_id).execute()
+        if not check_result.data:
+            return jsonify({"error": "Shipment not found"}), 404
+        
+        # Delete from cluster_shipments first (if exists) to avoid FK constraint issues
+        try:
+            sb.table("cluster_shipments").delete().eq("shipment_id", shipment_id).execute()
+        except Exception:
+            pass  # Ignore if no cluster_shipments entries exist
+        
+        # Delete the shipment
+        result = sb.table("shipments").delete().eq("id", shipment_id).execute()
+        
+        # Verify deletion by checking if it still exists
+        verify_result = sb.table("shipments").select("id").eq("id", shipment_id).execute()
+        if verify_result.data:
+            return jsonify({"error": "Failed to delete shipment"}), 500
+        
+        return jsonify({"status": "deleted", "id": shipment_id}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @shipments_bp.route("/api/shipments/upload", methods=["POST"])

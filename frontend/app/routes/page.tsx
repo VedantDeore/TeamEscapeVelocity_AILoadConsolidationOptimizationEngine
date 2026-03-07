@@ -12,7 +12,7 @@ import {
   Truck,
   Loader2,
 } from "lucide-react";
-import { mockRoutes, type Route as RouteType } from "@/lib/mock-data";
+import { type Route as RouteType } from "@/lib/mock-data";
 import { getRoutes } from "@/lib/api";
 
 // Dynamic import for Leaflet — it requires window/document (no SSR)
@@ -54,10 +54,8 @@ const LeafletMap = dynamic(() => import("@/components/ui/LeafletMap"), {
 });
 
 export default function RoutesPage() {
-  const [routes, setRoutes] = useState<RouteType[]>(mockRoutes);
-  const [selectedRoute, setSelectedRoute] = useState<RouteType | null>(
-    mockRoutes[0],
-  );
+  const [routes, setRoutes] = useState<RouteType[]>([]);
+  const [selectedRoute, setSelectedRoute] = useState<RouteType | null>(null);
   const [viewMode, setViewMode] = useState<"after" | "before">("after");
 
   useEffect(() => {
@@ -75,10 +73,16 @@ export default function RoutesPage() {
             color: r.color,
           }));
           setRoutes(mapped);
-          setSelectedRoute(mapped[0]);
+          setSelectedRoute(mapped[0] || null);
+        } else {
+          setRoutes([]);
+          setSelectedRoute(null);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setRoutes([]);
+        setSelectedRoute(null);
+      });
   }, []);
 
   const handleSelectRoute = useCallback((route: RouteType) => {

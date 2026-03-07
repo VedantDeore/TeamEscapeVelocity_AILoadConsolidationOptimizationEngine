@@ -6,6 +6,8 @@ Assigns (x, y, z) positions inside the vehicle container so the
 frontend Three.js viewer can render exact placement.
 """
 
+from __future__ import annotations
+
 import math
 import random
 
@@ -174,8 +176,6 @@ Key features:
   - Collision detection via AABB intersection
   - Real-time utilization and center-of-gravity tracking
 """
-
-from __future__ import annotations
 
 import copy
 import logging

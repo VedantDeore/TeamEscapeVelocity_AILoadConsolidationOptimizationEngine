@@ -23,9 +23,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  mockVehicles,
-  mockDepots,
-  mockCostParams,
   type Vehicle,
   type DepotLocation,
 } from "@/lib/mock-data";
@@ -96,9 +93,14 @@ const VEHICLE_TYPE_COLORS: Record<
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("fleet");
-  const [vehicles, setVehicles] = useState<Vehicle[]>(mockVehicles);
-  const [depots, setDepots] = useState<DepotLocation[]>(mockDepots);
-  const [costParams, setCostParams] = useState(mockCostParams);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [depots, setDepots] = useState<DepotLocation[]>([]);
+  const [costParams, setCostParams] = useState({
+    fuelCostPerKm: 0,
+    driverCostPerHr: 0,
+    tollAvgPerTrip: 0,
+    maintenanceCostPerKm: 0,
+  });
   const [saved, setSaved] = useState(false);
   const [showAddVehicle, setShowAddVehicle] = useState(false);
   const [showAddDepot, setShowAddDepot] = useState(false);
@@ -148,9 +150,13 @@ export default function SettingsPage() {
               isAvailable: v.is_available,
             })),
           );
+        } else {
+          setVehicles([]);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setVehicles([]);
+      });
   };
 
   const refreshDepots = () => {
@@ -239,9 +245,23 @@ export default function SettingsPage() {
             tollAvgPerTrip: data.toll_avg_per_trip,
             maintenanceCostPerKm: data.maintenance_cost_per_km,
           });
+        } else {
+          setCostParams({
+            fuelCostPerKm: 0,
+            driverCostPerHr: 0,
+            tollAvgPerTrip: 0,
+            maintenanceCostPerKm: 0,
+          });
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setCostParams({
+          fuelCostPerKm: 0,
+          driverCostPerHr: 0,
+          tollAvgPerTrip: 0,
+          maintenanceCostPerKm: 0,
+        });
+      });
   }, []);
 
   const handleSave = () => {

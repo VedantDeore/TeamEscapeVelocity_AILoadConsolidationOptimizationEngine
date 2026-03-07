@@ -8,8 +8,7 @@ import {
   Zap, Search, Undo2, Redo2, Eye, EyeOff, Flame, Move3D,
   ListOrdered, Grid3X3, Ruler, Settings,
 } from 'lucide-react';
-import { mockShipments, mockVehicles } from '@/lib/mock-data';
-import { clientSidePack, type ClientPackingItem, type ClientContainer } from '@/lib/api';
+import { getShipments, getVehicles, clientSidePack, type ClientPackingItem, type ClientContainer } from '@/lib/api';
 import type { PackingResultData, PackingStep, ViewPreset } from '@/components/packing-3d/PackingVisualizer3D';
 
 const PackingVisualizer3D = dynamic(() => import('@/components/packing-3d/PackingVisualizer3D'), {
@@ -58,25 +57,21 @@ interface CargoItem {
 }
 
 function seedInitialItems(): CargoItem[] {
-  return mockShipments.slice(0, 12).map((s, i) => ({
-    id: s.id,
-    label: s.shipmentCode,
-    lengthCm: s.lengthCm,
-    widthCm: s.widthCm,
-    heightCm: s.heightCm,
-    weightKg: s.weightKg,
-    quantity: 1,
-    color: COLORS[i % COLORS.length],
-    stackable: true,
-    keepUpright: s.cargoType === 'fragile',
-    doNotRotate: false,
-    cargoType: s.cargoType,
-    priority: s.priority,
-  }));
+  return [];
 }
 
 /* ── Build packing data ───────────────────────────────────────────── */
-function buildFromItems(items: CargoItem[], vehicle: typeof mockVehicles[0]): PackingResultData {
+interface VehicleType {
+  id: string;
+  name: string;
+  type?: string;
+  widthCm: number;
+  heightCm: number;
+  lengthCm: number;
+  maxWeightKg: number;
+}
+
+function buildFromItems(items: CargoItem[], vehicle: VehicleType): PackingResultData {
   const expanded: ClientPackingItem[] = [];
   for (const item of items) {
     for (let q = 0; q < item.quantity; q++) {
@@ -334,8 +329,9 @@ function Toggle({
    ═══════════════════════════════════════════════════════════════════════ */
 export default function PackingPage() {
   /* ── State: core ───────────────────────────────────────────────── */
-  const [selectedVehicleIdx, setSelectedVehicleIdx] = useState(2);
-  const [cargoItems, setCargoItems] = useState<CargoItem[]>(seedInitialItems);
+  const [vehicles, setVehicles] = useState<VehicleType[]>([]);
+  const [selectedVehicleIdx, setSelectedVehicleIdx] = useState(0);
+  const [cargoItems, setCargoItems] = useState<CargoItem[]>([]);
   const [packingData, setPackingData] = useState<PackingResultData | null>(null);
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -366,13 +362,71 @@ export default function PackingPage() {
   const [redoStack, setRedoStack] = useState<CargoItem[][]>([]);
   const screenshotRef = useRef<(() => string | null) | null>(null);
 
-  const vehicle = mockVehicles[selectedVehicleIdx];
+  const vehicle = vehicles[selectedVehicleIdx] || {
+    id: '',
+    name: 'No Vehicle',
+    widthCm: 0,
+    heightCm: 0,
+    lengthCm: 0,
+    maxWeightKg: 0,
+  };
   const [customDims, setCustomDims] = useState({
     lengthCm: vehicle.lengthCm,
     widthCm: vehicle.widthCm,
     heightCm: vehicle.heightCm,
     maxWeightKg: vehicle.maxWeightKg,
   });
+
+  /* ── Fetch vehicles and shipments ───────────────────────────────── */
+  useEffect(() => {
+    getVehicles()
+      .then((data) => {
+        if (data?.length) {
+          const mapped = data.map((v: any) => ({
+            id: v.id,
+            name: v.name,
+            widthCm: v.width_cm,
+            heightCm: v.height_cm,
+            lengthCm: v.length_cm,
+            maxWeightKg: v.max_weight_kg,
+          }));
+          setVehicles(mapped);
+          if (mapped.length > 0) {
+            setSelectedVehicleIdx(0);
+            setCustomDims({
+              lengthCm: mapped[0].lengthCm,
+              widthCm: mapped[0].widthCm,
+              heightCm: mapped[0].heightCm,
+              maxWeightKg: mapped[0].maxWeightKg,
+            });
+          }
+        }
+      })
+      .catch(() => {});
+
+    getShipments({ limit: '12' })
+      .then((data) => {
+        if (data?.length) {
+          const items = data.slice(0, 12).map((s: any, i: number) => ({
+            id: s.id,
+            label: s.shipment_code || `SHIP-${s.id}`,
+            lengthCm: s.length_cm || 100,
+            widthCm: s.width_cm || 80,
+            heightCm: s.height_cm || 60,
+            weightKg: s.weight_kg || 500,
+            quantity: 1,
+            color: COLORS[i % COLORS.length],
+            stackable: true,
+            keepUpright: s.cargo_type === 'fragile',
+            doNotRotate: false,
+            cargoType: s.cargo_type || 'general',
+            priority: s.priority || 'normal',
+          }));
+          setCargoItems(items);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   /* ── Undo / redo helpers ────────────────────────────────────────── */
   const pushUndo = useCallback(() => {
@@ -396,32 +450,38 @@ export default function PackingPage() {
 
   /* ── Vehicle change → update dims ───────────────────────────────── */
   useEffect(() => {
-    const v = mockVehicles[selectedVehicleIdx];
-    setCustomDims({
-      lengthCm: v.lengthCm,
-      widthCm: v.widthCm,
-      heightCm: v.heightCm,
-      maxWeightKg: v.maxWeightKg,
-    });
-  }, [selectedVehicleIdx]);
+    if (vehicles[selectedVehicleIdx]) {
+      const v = vehicles[selectedVehicleIdx];
+      setCustomDims({
+        lengthCm: v.lengthCm,
+        widthCm: v.widthCm,
+        heightCm: v.heightCm,
+        maxWeightKg: v.maxWeightKg,
+      });
+    }
+  }, [selectedVehicleIdx, vehicles]);
 
   /* ── Auto-calculate on items / vehicle change ───────────────────── */
   useEffect(() => {
-    const v = { ...mockVehicles[selectedVehicleIdx], ...customDims };
-    const data = buildFromItems(cargoItems, v);
-    setPackingData(data);
-    setAnimationStep(data.placements.length);
-    setIsAnimating(false);
+    if (vehicles[selectedVehicleIdx] && cargoItems.length > 0) {
+      const v = { ...vehicles[selectedVehicleIdx], ...customDims };
+      const data = buildFromItems(cargoItems, v);
+      setPackingData(data);
+      setAnimationStep(data.placements.length);
+      setIsAnimating(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVehicleIdx, cargoItems]);
+  }, [selectedVehicleIdx, cargoItems, vehicles]);
 
   const handleRecalculate = useCallback(() => {
-    const v = { ...mockVehicles[selectedVehicleIdx], ...customDims };
-    const data = buildFromItems(cargoItems, v);
-    setPackingData(data);
-    setAnimationStep(data.placements.length);
-    setIsAnimating(false);
-  }, [cargoItems, customDims, selectedVehicleIdx]);
+    if (vehicles[selectedVehicleIdx]) {
+      const v = { ...vehicles[selectedVehicleIdx], ...customDims };
+      const data = buildFromItems(cargoItems, v);
+      setPackingData(data);
+      setAnimationStep(data.placements.length);
+      setIsAnimating(false);
+    }
+  }, [cargoItems, customDims, selectedVehicleIdx, vehicles]);
 
   /* ── Animate ────────────────────────────────────────────────────── */
   const handleAnimate = useCallback(() => {
@@ -539,10 +599,11 @@ export default function PackingPage() {
 
   /* ── Auto-select best vehicle ───────────────────────────────────── */
   const autoSelectBest = useCallback(() => {
+    if (vehicles.length === 0) return;
     let bestIdx = 0,
       bestUtil = -1;
-    for (let i = 0; i < mockVehicles.length; i++) {
-      const data = buildFromItems(cargoItems, mockVehicles[i]);
+    for (let i = 0; i < vehicles.length; i++) {
+      const data = buildFromItems(cargoItems, vehicles[i]);
       const allFit = data.unpacked_items.length === 0;
       const util = data.metrics.volume_utilization_pct;
       if (allFit && util > bestUtil) {
@@ -552,11 +613,11 @@ export default function PackingPage() {
     }
     if (bestUtil < 0) {
       let bestCap = 0;
-      for (let i = 0; i < mockVehicles.length; i++) {
+      for (let i = 0; i < vehicles.length; i++) {
         const cap =
-          mockVehicles[i].lengthCm *
-          mockVehicles[i].widthCm *
-          mockVehicles[i].heightCm;
+          vehicles[i].lengthCm *
+          vehicles[i].widthCm *
+          vehicles[i].heightCm;
         if (cap > bestCap) {
           bestCap = cap;
           bestIdx = i;
@@ -564,7 +625,7 @@ export default function PackingPage() {
       }
     }
     setSelectedVehicleIdx(bestIdx);
-  }, [cargoItems]);
+  }, [cargoItems, vehicles]);
 
   /* ── Export / Import JSON ───────────────────────────────────────── */
   const exportJSON = useCallback(() => {
@@ -766,7 +827,7 @@ export default function PackingPage() {
 
         {/* Truck pills */}
         <div style={{ display: 'flex', gap: 4 }}>
-          {mockVehicles.map((v, i) => (
+          {vehicles.map((v, i) => (
             <button
               key={v.id}
               onClick={() => setSelectedVehicleIdx(i)}
@@ -1567,9 +1628,11 @@ export default function PackingPage() {
                   style={{ fontSize: 12, fontWeight: 600, color: '#0a2540' }}
                 >
                   {vehicle.name}{' '}
-                  <span style={{ color: '#8792a2', fontWeight: 400 }}>
-                    ({vehicle.type})
-                  </span>
+                  {vehicle.type && (
+                    <span style={{ color: '#8792a2', fontWeight: 400 }}>
+                      ({vehicle.type})
+                    </span>
+                  )}
                 </div>
                 <div
                   style={{

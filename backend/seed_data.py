@@ -36,14 +36,18 @@ CITIES = [
     {"name": "Indore", "lat": 22.7196, "lng": 75.8577},
 ]
 
-VEHICLES_DATA = [
-    {"name": "Tata 407", "type": "Light Truck", "max_weight_kg": 2500, "max_volume_m3": 14, "length_cm": 430, "width_cm": 180, "height_cm": 180, "cost_per_km": 12, "emission_factor": 0.09, "is_available": True},
-    {"name": "Eicher 10.59", "type": "Medium Truck", "max_weight_kg": 7000, "max_volume_m3": 28, "length_cm": 600, "width_cm": 230, "height_cm": 200, "cost_per_km": 18, "emission_factor": 0.075, "is_available": True},
-    {"name": "Ashok Leyland 1612", "type": "Heavy Truck", "max_weight_kg": 12000, "max_volume_m3": 42, "length_cm": 720, "width_cm": 240, "height_cm": 240, "cost_per_km": 24, "emission_factor": 0.062, "is_available": True},
-    {"name": "Tata Prima 4028", "type": "Trailer", "max_weight_kg": 25000, "max_volume_m3": 70, "length_cm": 1220, "width_cm": 245, "height_cm": 270, "cost_per_km": 32, "emission_factor": 0.055, "is_available": True},
-    {"name": "BharatBenz 2823", "type": "Heavy Truck", "max_weight_kg": 18000, "max_volume_m3": 55, "length_cm": 900, "width_cm": 240, "height_cm": 250, "cost_per_km": 28, "emission_factor": 0.058, "is_available": True},
-    {"name": "Mahindra Blazo 25", "type": "Heavy Truck", "max_weight_kg": 16000, "max_volume_m3": 48, "length_cm": 800, "width_cm": 240, "height_cm": 240, "cost_per_km": 26, "emission_factor": 0.06, "is_available": False},
-]
+# MOCK VEHICLES DATA - COMMENTED OUT TO PREVENT SEEDING MOCK DATA
+# Users should add vehicles through the Settings page instead
+# VEHICLES_DATA = [
+#     {"name": "Tata 407", "type": "Light Truck", "max_weight_kg": 2500, "max_volume_m3": 14, "length_cm": 430, "width_cm": 180, "height_cm": 180, "cost_per_km": 12, "emission_factor": 0.09, "is_available": True},
+#     {"name": "Eicher 10.59", "type": "Medium Truck", "max_weight_kg": 7000, "max_volume_m3": 28, "length_cm": 600, "width_cm": 230, "height_cm": 200, "cost_per_km": 18, "emission_factor": 0.075, "is_available": True},
+#     {"name": "Ashok Leyland 1612", "type": "Heavy Truck", "max_weight_kg": 12000, "max_volume_m3": 42, "length_cm": 720, "width_cm": 240, "height_cm": 240, "cost_per_km": 24, "emission_factor": 0.062, "is_available": True},
+#     {"name": "Tata Prima 4028", "type": "Trailer", "max_weight_kg": 25000, "max_volume_m3": 70, "length_cm": 1220, "width_cm": 245, "height_cm": 270, "cost_per_km": 32, "emission_factor": 0.055, "is_available": True},
+#     {"name": "BharatBenz 2823", "type": "Heavy Truck", "max_weight_kg": 18000, "max_volume_m3": 55, "length_cm": 900, "width_cm": 240, "height_cm": 250, "cost_per_km": 28, "emission_factor": 0.058, "is_available": True},
+#     {"name": "Mahindra Blazo 25", "type": "Heavy Truck", "max_weight_kg": 16000, "max_volume_m3": 48, "length_cm": 800, "width_cm": 240, "height_cm": 240, "cost_per_km": 26, "emission_factor": 0.06, "is_available": False},
+# ]
+
+VEHICLES_DATA = []  # Empty - no mock vehicles will be seeded
 
 DEPOTS_DATA = [
     {"name": "Delhi Hub", "city": "Delhi", "lat": 28.6139, "lng": 77.209},
@@ -92,6 +96,9 @@ def seed_cities():
 
 def seed_vehicles():
     print("Seeding vehicles...")
+    if not VEHICLES_DATA:
+        print("  No vehicles to seed (VEHICLES_DATA is empty)")
+        return {}
     result = supabase.table("vehicles").insert(VEHICLES_DATA).execute()
     # Return map of name → id
     return {v["name"]: v["id"] for v in result.data}
@@ -99,6 +106,9 @@ def seed_vehicles():
 
 def seed_depots():
     print("Seeding depots...")
+    if not DEPOTS_DATA:
+        print("  No depots to seed (DEPOTS_DATA is empty)")
+        return
     supabase.table("depots").insert(DEPOTS_DATA).execute()
     print(f"  Inserted {len(DEPOTS_DATA)} depots")
 
@@ -410,6 +420,23 @@ def main():
     vehicle_map = seed_vehicles()
     seed_depots()
     print()
+    
+    # Skip consolidation seeding if no vehicles were seeded
+    if not vehicle_map:
+        print("Step 3: Skipping shipments (no vehicles available)...")
+        print("Step 4: Skipping consolidation plan (no vehicles available)...")
+        print("Step 5: Skipping routes (no vehicles available)...")
+        print()
+        print("Step 6: Seeding analytics...")
+        seed_analytics()
+        print()
+        print("Step 7: Seeding miscellaneous...")
+        seed_misc()
+        print()
+        print("=" * 60)
+        print("DONE! Reference data seeded (no vehicles/depots - add them via Settings).")
+        print("=" * 60)
+        return
 
     print("Step 3: Seeding shipments...")
     shipment_map = seed_shipments(150)
