@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Leaf,
   TreePine,
@@ -9,6 +9,7 @@ import {
   Download,
   Loader2,
   Truck,
+  RefreshCw,
 } from "lucide-react";
 import {
   AreaChart,
@@ -22,9 +23,10 @@ import {
   Bar,
   Legend,
 } from "recharts";
-import { mockCarbonMonthly, mockCarbonBreakdown } from "@/lib/mock-data";
 import { getCarbonMetrics, getCarbonRuns } from "@/lib/api";
 import jsPDF from "jspdf";
+
+const POLL_INTERVAL_MS = 15_000; // Refresh data every 15 seconds
 
 function AnimatedNumber({
   value,
@@ -75,6 +77,9 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function CarbonPage() {
   const [downloading, setDownloading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
 
   // Real-time metrics from /api/analytics/carbon
   const [metrics, setMetrics] = useState({
@@ -87,32 +92,63 @@ export default function CarbonPage() {
   const [runs, setRuns] = useState<any[]>([]);
   const [clusters, setClusters] = useState<any[]>([]);
 
-  useEffect(() => {
-    getCarbonMetrics()
-      .then((data) => {
-        setMetrics({
-          co2_saved_total: data.co2_saved_total ?? 0,
-          co2_before: data.co2_before ?? 0,
-          co2_after: data.co2_after ?? 0,
-          pct_saved: data.pct_saved ?? 0,
-          trees_equivalent: data.trees_equivalent ?? 0,
-          car_km_avoided: data.car_km_avoided ?? 0,
-          green_score: data.green_score ?? "N/A",
-          trips_eliminated: data.trips_eliminated ?? 0,
-          energy_saved_kwh: data.energy_saved_kwh ?? 0,
-          fuel_saved_liters: data.fuel_saved_liters ?? 0,
-          clean_air_days: data.clean_air_days ?? 0,
-        });
-      })
-      .catch(() => {});
+  // ── Fetch all carbon data (reusable) ──
+  const fetchData = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setRefreshing(true);
+    try {
+      const [metricsData, runsData] = await Promise.all([
+        getCarbonMetrics().catch(() => null),
+        getCarbonRuns().catch(() => null),
+      ]);
 
-    getCarbonRuns()
-      .then((data) => {
-        if (data?.runs?.length) setRuns(data.runs);
-        if (data?.clusters?.length) setClusters(data.clusters);
-      })
-      .catch(() => {});
+      if (metricsData) {
+        setMetrics({
+          co2_saved_total: metricsData.co2_saved_total ?? 0,
+          co2_before: metricsData.co2_before ?? 0,
+          co2_after: metricsData.co2_after ?? 0,
+          pct_saved: metricsData.pct_saved ?? 0,
+          trees_equivalent: metricsData.trees_equivalent ?? 0,
+          car_km_avoided: metricsData.car_km_avoided ?? 0,
+          green_score: metricsData.green_score ?? "N/A",
+          trips_eliminated: metricsData.trips_eliminated ?? 0,
+          energy_saved_kwh: metricsData.energy_saved_kwh ?? 0,
+          fuel_saved_liters: metricsData.fuel_saved_liters ?? 0,
+          clean_air_days: metricsData.clean_air_days ?? 0,
+        });
+      }
+
+      if (runsData) {
+        if (runsData.runs?.length) setRuns(runsData.runs);
+        if (runsData.clusters?.length) setClusters(runsData.clusters);
+      }
+
+      setLastUpdated(new Date());
+    } finally {
+      if (showSpinner) setTimeout(() => setRefreshing(false), 400);
+    }
   }, []);
+
+  // ── Initial fetch + polling every 15s ──
+  useEffect(() => {
+    fetchData(true); // initial load with spinner
+
+    pollRef.current = setInterval(() => fetchData(false), POLL_INTERVAL_MS);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [fetchData]);
+
+  // ── Re-fetch when user returns to this tab ──
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        fetchData(false);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [fetchData]);
 
   // Chart data: per-run CO₂
   const runChartData = useMemo(() => {
@@ -331,10 +367,26 @@ export default function CarbonPage() {
           <h1 className="page-title">Carbon Impact</h1>
           <p className="page-subtitle">ESG-aligned sustainability metrics & environmental impact</p>
         </div>
-        <button className="btn btn-primary" onClick={handleDownloadESG} disabled={downloading}>
-          {downloading ? <Loader2 size={15} className="spin" /> : <Download size={15} />}
-          {downloading ? " Generating..." : " Download ESG Report"}
-        </button>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          {lastUpdated && (
+            <span style={{ fontSize: "11px", color: "#8792a2", whiteSpace: "nowrap" }}>
+              Updated {lastUpdated.toLocaleTimeString()}
+            </span>
+          )}
+          <button
+            className="btn btn-secondary"
+            onClick={() => fetchData(true)}
+            disabled={refreshing}
+            style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px" }}
+          >
+            <RefreshCw size={14} className={refreshing ? "spin" : ""} />
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+          <button className="btn btn-primary" onClick={handleDownloadESG} disabled={downloading}>
+            {downloading ? <Loader2 size={15} className="spin" /> : <Download size={15} />}
+            {downloading ? " Generating..." : " Download ESG Report"}
+          </button>
+        </div>
       </div>
 
       <div className="page-body">
