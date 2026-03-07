@@ -93,7 +93,7 @@ export default function RoutesPage() {
   const [selectedRoute, setSelectedRoute] = useState<RouteType | null>(null);
   const [expandedRoute, setExpandedRoute] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"after" | "before">("after");
-  const [mapTheme, setMapTheme] = useState<"light" | "dark">("dark");
+  const [mapTheme, setMapTheme] = useState<"light" | "dark">("light");
   const [loading, setLoading] = useState(true);
   const [selectedPlanId, setSelectedPlanId] = useState<string>("latest");
 
@@ -554,20 +554,21 @@ export default function RoutesPage() {
                     bottom: "14px",
                     left: "14px",
                     zIndex: 1000,
-                    background: "rgba(15, 23, 42, 0.9)",
+                    background: mapTheme === "dark" ? "rgba(15, 23, 42, 0.9)" : "rgba(255, 255, 255, 0.95)",
                     backdropFilter: "blur(10px)",
-                    border: "1px solid var(--border-primary)",
+                    border: mapTheme === "dark" ? "1px solid var(--border-primary)" : "1px solid rgba(0,0,0,0.1)",
                     borderRadius: "var(--radius-md)",
                     padding: "10px 14px",
                     fontSize: "11px",
                     minWidth: 130,
+                    boxShadow: mapTheme === "light" ? "0 2px 8px rgba(0,0,0,0.1)" : "none",
                   }}
                 >
                   <div
                     style={{
                       fontWeight: 700,
                       marginBottom: "8px",
-                      color: "var(--text-primary)",
+                      color: mapTheme === "dark" ? "var(--text-primary)" : "#1e293b",
                       fontSize: "10px",
                       textTransform: "uppercase",
                       letterSpacing: "0.5px",
@@ -583,7 +584,7 @@ export default function RoutesPage() {
                         display: "flex",
                         alignItems: "center",
                         gap: 6,
-                        color: "var(--text-secondary)",
+                        color: mapTheme === "dark" ? "var(--text-secondary)" : "#475569",
                       }}
                     >
                       <div
@@ -601,7 +602,7 @@ export default function RoutesPage() {
                         display: "flex",
                         alignItems: "center",
                         gap: 6,
-                        color: "var(--text-secondary)",
+                        color: mapTheme === "dark" ? "var(--text-secondary)" : "#475569",
                       }}
                     >
                       <div
@@ -619,7 +620,7 @@ export default function RoutesPage() {
                         display: "flex",
                         alignItems: "center",
                         gap: 6,
-                        color: "var(--text-secondary)",
+                        color: mapTheme === "dark" ? "var(--text-secondary)" : "#475569",
                       }}
                     >
                       <div
@@ -637,7 +638,7 @@ export default function RoutesPage() {
                     style={{
                       marginTop: 8,
                       paddingTop: 8,
-                      borderTop: "1px solid rgba(255,255,255,0.08)",
+                      borderTop: mapTheme === "dark" ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.08)",
                     }}
                   >
                     {routes.map((r) => (

@@ -86,6 +86,33 @@ def chat():
     })
 
 
+@copilot_bp.route("/api/copilot/save-message", methods=["POST"])
+def save_message():
+    """Save a single chat message (used by action handlers that bypass /chat)."""
+    sb = get_supabase()
+    data = request.get_json(silent=True) or {}
+    role = data.get("role", "user")
+    content = data.get("content", "")
+    session_id = data.get("session_id", "default")
+    actions = data.get("actions", [])
+
+    if not content:
+        return jsonify({"error": "content is required"}), 400
+
+    try:
+        saved = sb.table("chat_messages").insert({
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now(timezone.utc).strftime("%I:%M %p"),
+            "session_id": session_id,
+            "actions": actions if actions else None,
+        }).execute()
+        row = saved.data[0] if saved.data else {}
+        return jsonify({"id": row.get("id", ""), "ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @copilot_bp.route("/api/copilot/history", methods=["GET"])
 def chat_history():
     sb         = get_supabase()

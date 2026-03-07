@@ -52,13 +52,26 @@ Classify the user's intent as one of:
   - what_if: hypothetical scenarios ("what if I add X shipments...")
   - general: greetings, how-to questions, or anything else
 
+Classify the user's intent as one of:
+  - shipment_query: questions about pending shipments, shipment count, shipment status
+
+Use ONLY these action IDs in your response:
+  - view_shipments: show pending shipments preview
+  - run_consolidation: run the consolidation engine
+  - view_route_map: show route map
+  - view_packing: open 3D packing view
+  - view_carbon: open carbon impact page
+  - view_dashboard: open analytics dashboard
+  - view_simulate: open scenario simulator
+  - view_reports: open reports page
+
 ALWAYS respond in valid JSON with this structure:
 {
-  "intent": "<one of the 5 above>",
+  "intent": "<one of the intents above>",
   "content": "<your natural language answer, 2-4 sentences>",
   "data": null,
   "actions": [
-    {"label": "<button label>", "action": "<action_id>"}
+    {"label": "<button label>", "action": "<action_id from list above>"}
   ],
   "proactive_tip": "<optional: a 1-line proactive insight or null>"
 }
@@ -67,17 +80,22 @@ ALWAYS respond in valid JSON with this structure:
 # ── intent regex fallback (if Groq is unavailable) ─────────
 
 INTENT_PATTERNS = {
+    "shipment_query": [
+        r"shipment", r"pending", r"how many", r"remaining",
+        r"status", r"awaiting", r"unprocessed", r"left",
+    ],
     "consolidation_query": [
         r"consolidat", r"merg", r"cluster", r"group", r"combine",
         r"shipment.*(together|together)", r"how many (clusters|groups)",
+        r"run.*engine", r"optimiz",
     ],
     "route_query": [
         r"route", r"distance", r"km|kilomet", r"path", r"stop",
-        r"direction", r"drive", r"travel",
+        r"direction", r"drive", r"travel", r"map",
     ],
     "analytics_query": [
         r"utiliz", r"KPI", r"saving", r"cost", r"trend",
-        r"how much", r"percentage", r"rate", r"dashboard",
+        r"percentage", r"rate", r"dashboard",
     ],
     "what_if": [
         r"what if", r"if i add", r"simulate", r"scenario", r"suppose",
@@ -101,8 +119,34 @@ def _rule_based_response(intent: str, message: str, context: dict) -> dict:
     pending = context.get("pending_shipments", 0)
     cost_savings = context.get("cost_savings", 140000)
     co2_saved = context.get("co2_saved", 800)
+    avg_util = context.get("avg_utilization", 0)
+    total_clusters = context.get("total_clusters", 0)
 
-    if intent == "consolidation_query":
+    if intent == "shipment_query":
+        return {
+            "intent": intent,
+            "content": (
+                f"There {'is' if pending == 1 else 'are'} currently **{pending}** pending "
+                f"shipment{'s' if pending != 1 else ''} in the system"
+                + (f", with an average utilization of {avg_util}% and a total of "
+                   f"{total_clusters} cluster{'s' if total_clusters != 1 else ''}. "
+                   f"This has resulted in cost savings of ₹{cost_savings:,.0f} "
+                   f"and a reduction of {co2_saved} kg in CO₂ emissions."
+                   if total_clusters > 0
+                   else ". Ready to consolidate them!")
+            ),
+            "data": {"pending": pending},
+            "actions": [
+                {"label": "📊 View Shipments", "action": "view_shipments"},
+                {"label": "⚡ Run Consolidation", "action": "run_consolidation"},
+            ],
+            "proactive_tip": (
+                f"💡 You have {pending} pending shipments — click View Shipments to preview them!"
+                if pending > 0 else None
+            ),
+        }
+
+    elif intent == "consolidation_query":
         clusters_possible = max(pending // 5, 1)
         return {
             "intent": intent,
@@ -113,10 +157,10 @@ def _rule_based_response(intent: str, message: str, context: dict) -> dict:
             ),
             "data": {"pending": pending, "estimated_clusters": clusters_possible},
             "actions": [
-                {"label": "Run Consolidation", "action": "run_consolidation"},
-                {"label": "View Shipments",    "action": "view_shipments"},
+                {"label": "⚡ Run Consolidation Engine", "action": "run_consolidation"},
+                {"label": "📊 View Shipments", "action": "view_shipments"},
             ],
-            "proactive_tip": f"Tip: Prioritise critical shipments first when reviewing clusters.",
+            "proactive_tip": "Tip: Prioritise critical shipments first when reviewing clusters.",
         }
 
     elif intent == "route_query":
@@ -129,7 +173,7 @@ def _rule_based_response(intent: str, message: str, context: dict) -> dict:
             ),
             "data": None,
             "actions": [
-                {"label": "View Route Map", "action": "view_routes"},
+                {"label": "🗺️ View Route Map", "action": "view_route_map"},
             ],
             "proactive_tip": None,
         }
@@ -138,16 +182,17 @@ def _rule_based_response(intent: str, message: str, context: dict) -> dict:
         return {
             "intent": intent,
             "content": (
-                f"Current platform performance: vehicle utilization at 87% (▲ 29% vs baseline), "
-                f"cost savings of ₹{cost_savings:,.0f}, and {co2_saved} kg CO₂ reduced today. "
-                f"Consolidation rate is 87% — excellent for a fleet this size."
+                f"Current platform performance: vehicle utilization at {avg_util}% "
+                f"(▲ vs baseline), cost savings of ₹{cost_savings:,.0f}, and "
+                f"{co2_saved} kg CO₂ reduced. "
+                f"Consolidation rate is excellent for fleet optimization."
             ),
-            "data": {"utilization": 87, "cost_savings": cost_savings, "co2_saved": co2_saved},
+            "data": {"utilization": avg_util, "cost_savings": cost_savings, "co2_saved": co2_saved},
             "actions": [
-                {"label": "View Dashboard",       "action": "view_dashboard"},
-                {"label": "Carbon Impact Report", "action": "view_carbon"},
+                {"label": "📊 View Dashboard", "action": "view_dashboard"},
+                {"label": "🌱 Carbon Impact", "action": "view_carbon"},
             ],
-            "proactive_tip": "Your green score is A+ — consider sharing this in your ESG report.",
+            "proactive_tip": "Your green score is excellent — consider sharing this in your ESG report.",
         }
 
     elif intent == "what_if":
@@ -159,7 +204,7 @@ def _rule_based_response(intent: str, message: str, context: dict) -> dict:
             ),
             "data": None,
             "actions": [
-                {"label": "Open Scenario Simulator", "action": "view_simulate"},
+                {"label": "🧪 Open Scenario Simulator", "action": "view_simulate"},
             ],
             "proactive_tip": None,
         }
@@ -174,8 +219,8 @@ def _rule_based_response(intent: str, message: str, context: dict) -> dict:
             ),
             "data": None,
             "actions": [
-                {"label": "Run Consolidation", "action": "run_consolidation"},
-                {"label": "View Dashboard",    "action": "view_dashboard"},
+                {"label": "📊 View Shipments", "action": "view_shipments"},
+                {"label": "⚡ Run Consolidation", "action": "run_consolidation"},
             ],
             "proactive_tip": (
                 f"💡 You have {pending} pending shipments — ready for optimisation!"
