@@ -19,6 +19,8 @@ import {
   History,
   Weight,
   Calendar,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { type Route as RouteType } from "@/lib/mock-data";
 import { getRoutes } from "@/lib/api";
@@ -91,6 +93,7 @@ export default function RoutesPage() {
   const [selectedRoute, setSelectedRoute] = useState<RouteType | null>(null);
   const [expandedRoute, setExpandedRoute] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"after" | "before">("after");
+  const [mapTheme, setMapTheme] = useState<"light" | "dark">("dark");
   const [loading, setLoading] = useState(true);
   const [selectedPlanId, setSelectedPlanId] = useState<string>("latest");
 
@@ -258,6 +261,33 @@ export default function RoutesPage() {
               Consolidated
             </button>
           </div>
+          <button
+            onClick={() => setMapTheme(mapTheme === "dark" ? "light" : "dark")}
+            title={
+              mapTheme === "dark" ? "Switch to light map" : "Switch to dark map"
+            }
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 14px",
+              borderRadius: "8px",
+              border: "1px solid var(--border)",
+              background:
+                mapTheme === "dark"
+                  ? "rgba(255,255,255,0.06)"
+                  : "rgba(0,0,0,0.04)",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              fontSize: "13px",
+              fontWeight: 500,
+              transition: "all 0.2s ease",
+              marginLeft: "8px",
+            }}
+          >
+            {mapTheme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+            {mapTheme === "dark" ? "Light" : "Dark"}
+          </button>
         </div>
       </div>
 
@@ -487,6 +517,7 @@ export default function RoutesPage() {
                   selectedRoute={selectedRoute}
                   onSelectRoute={handleSelectRoute}
                   viewMode={viewMode}
+                  mapTheme={mapTheme}
                 />
 
                 {/* Overlay badges */}
