@@ -31,8 +31,11 @@ logging.basicConfig(
 
 app = Flask(__name__)
 
-# Allow all origins during hackathon (tighten in production)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# CORS: allow configured origins (falls back to allow-all for development)
+allowed_origins = os.environ.get("CORS_ORIGINS", "*")
+if allowed_origins != "*":
+    allowed_origins = [o.strip() for o in allowed_origins.split(",")]
+CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
 
 # Register all blueprints
 app.register_blueprint(shipments_bp)
