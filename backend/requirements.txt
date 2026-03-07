@@ -5,11 +5,10 @@ scikit-learn
 pandas
 numpy
 scipy
-py3dbp
 geopy
-openrouteservice
 groq
 huggingface-hub
 supabase
 python-dotenv
 reportlab
+requests
