@@ -217,37 +217,13 @@ SHP-0003,Bangalore,Delhi,2100,8.5,250,180,200,critical,general,2026-03-07T10:00:
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-/**
- * API Client — Lorri Backend
- * ===========================
- *
- * Provides typed fetch wrappers for all backend endpoints.
- * Falls back to client-side packing when backend is unavailable.
- */
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-
-// ---------------------------------------------------------------------------
-// Generic fetch helper
-// ---------------------------------------------------------------------------
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${path}`;
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`API ${res.status}: ${body}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 // ---------------------------------------------------------------------------
 // Health Check
 // ---------------------------------------------------------------------------
 export async function checkHealth(): Promise<{ status: string; service: string }> {
-  return apiFetch("/api/health");
+  return fetchApi("/api/health");
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +257,7 @@ export interface PackItemsRequest {
 }
 
 export async function packItems(req: PackItemsRequest) {
-  return apiFetch("/api/packing/pack", {
+  return fetchApi("/api/packing/pack", {
     method: "POST",
     body: JSON.stringify(req),
   });
@@ -296,11 +272,11 @@ export async function packDemo(
   if (items) params.set("items", String(items));
   if (vehicle) params.set("vehicle", vehicle);
   if (algorithm) params.set("algorithm", algorithm);
-  return apiFetch(`/api/packing/demo?${params.toString()}`);
+  return fetchApi(`/api/packing/demo?${params.toString()}`);
 }
 
 export async function compareAlgorithms(req: Partial<PackItemsRequest>) {
-  return apiFetch("/api/packing/compare", {
+  return fetchApi("/api/packing/compare", {
     method: "POST",
     body: JSON.stringify(req),
   });
@@ -310,7 +286,7 @@ export async function compareAlgorithms(req: Partial<PackItemsRequest>) {
 // Simulation Endpoints
 // ---------------------------------------------------------------------------
 export async function runSimulation(config: Record<string, unknown>) {
-  return apiFetch("/api/simulation/run", {
+  return fetchApi("/api/simulation/run", {
     method: "POST",
     body: JSON.stringify(config),
   });
@@ -318,11 +294,11 @@ export async function runSimulation(config: Record<string, unknown>) {
 
 export async function demoSimulation(items?: number) {
   const params = items ? `?items=${items}` : "";
-  return apiFetch(`/api/simulation/demo${params}`);
+  return fetchApi(`/api/simulation/demo${params}`);
 }
 
 export async function compareScenarios(config: Record<string, unknown>) {
-  return apiFetch("/api/simulation/compare-scenarios", {
+  return fetchApi("/api/simulation/compare-scenarios", {
     method: "POST",
     body: JSON.stringify(config),
   });

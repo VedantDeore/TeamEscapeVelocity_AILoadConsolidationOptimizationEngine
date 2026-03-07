@@ -155,6 +155,9 @@ def _empty_result(vehicle: dict) -> dict:
         "container": {"length": c_len, "width": c_wid, "height": c_hei},
         "fits": True,
     }
+
+
+"""
 3D Bin Packing Engine — AI Load Consolidation Optimization
 ==========================================================
 
