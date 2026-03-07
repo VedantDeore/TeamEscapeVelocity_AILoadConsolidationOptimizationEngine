@@ -23,6 +23,7 @@ import {
   Info,
   Box,
   ArrowRight,
+  RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
 import { type Shipment } from "@/lib/mock-data";
@@ -35,6 +36,7 @@ import {
   downloadCSVTemplate,
   deleteShipment,
   getVehicles,
+  progressShipmentStatus,
 } from "@/lib/api";
 
 const priorityBadge: Record<string, string> = {
@@ -63,6 +65,16 @@ export default function ShipmentsPage() {
   useEffect(() => {
     refreshShipments();
   }, []);
+  useEffect(() => {
+    // Auto-progress statuses on load, then every 60s
+    const tick = () =>
+      progressShipmentStatus()
+        .then(() => refreshShipments())
+        .catch(() => {});
+    tick();
+    const iv = setInterval(tick, 60_000);
+    return () => clearInterval(iv);
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -89,6 +101,10 @@ export default function ShipmentsPage() {
     cargo_type: "general",
     delivery_window: "same",
     special_instructions: "",
+    pickup_date: new Date().toISOString().slice(0, 10),
+    pickup_time: "09:00",
+    delivery_date: new Date().toISOString().slice(0, 10),
+    delivery_time: "18:00",
   });
   const [toast, setToast] = useState<{
     message: string;
@@ -110,6 +126,8 @@ export default function ShipmentsPage() {
     height_cm: 0,
     priority: "normal",
     cargo_type: "general",
+    delivery_date: "",
+    delivery_time: "",
   });
   const perPage = 15;
   const [maxTruckCapacity, setMaxTruckCapacity] = useState(0);
@@ -229,17 +247,11 @@ export default function ShipmentsPage() {
       const originCity = findCity(newShipment.origin_city);
       const destCity = findCity(newShipment.dest_city);
 
-      const now = new Date();
-      const deliveryEnd = new Date(now);
-      if (newShipment.delivery_window === "same") {
-        deliveryEnd.setHours(18, 0, 0, 0);
-      } else if (newShipment.delivery_window === "next") {
-        deliveryEnd.setDate(deliveryEnd.getDate() + 1);
-        deliveryEnd.setHours(18, 0, 0, 0);
-      } else {
-        deliveryEnd.setDate(deliveryEnd.getDate() + 2);
-        deliveryEnd.setHours(18, 0, 0, 0);
-      }
+      // Build pickup/delivery timestamps from date+time inputs
+      const pickupStr = `${newShipment.pickup_date}T${newShipment.pickup_time}:00`;
+      const deliveryStr = `${newShipment.delivery_date}T${newShipment.delivery_time}:00`;
+      const now = new Date(pickupStr);
+      const deliveryEnd = new Date(deliveryStr);
 
       const shipmentData: any = {
         origin_city: newShipment.origin_city.trim(),
@@ -288,6 +300,10 @@ export default function ShipmentsPage() {
         cargo_type: "general",
         delivery_window: "same",
         special_instructions: "",
+        pickup_date: new Date().toISOString().slice(0, 10),
+        pickup_time: "09:00",
+        delivery_date: new Date().toISOString().slice(0, 10),
+        delivery_time: "18:00",
       });
       refreshShipments();
     } catch (err: any) {
@@ -301,6 +317,9 @@ export default function ShipmentsPage() {
 
   const openEditModal = (shipment: Shipment) => {
     setEditingShipment(shipment);
+    const dEnd = shipment.deliveryWindowEnd
+      ? new Date(shipment.deliveryWindowEnd)
+      : null;
     setEditData({
       origin_city: shipment.originCity,
       dest_city: shipment.destCity,
@@ -311,6 +330,8 @@ export default function ShipmentsPage() {
       height_cm: shipment.heightCm,
       priority: shipment.priority,
       cargo_type: shipment.cargoType,
+      delivery_date: dEnd ? dEnd.toISOString().slice(0, 10) : "",
+      delivery_time: dEnd ? dEnd.toTimeString().slice(0, 5) : "",
     });
     setShowEditModal(true);
   };
@@ -319,7 +340,16 @@ export default function ShipmentsPage() {
     if (!editingShipment) return;
     setIsEditing(true);
     try {
-      await updateShipment(editingShipment.id, editData);
+      const payload: any = { ...editData };
+      // Include delivery window update if date/time are set
+      if (editData.delivery_date && editData.delivery_time) {
+        payload.delivery_window_end = new Date(
+          `${editData.delivery_date}T${editData.delivery_time}:00`,
+        ).toISOString();
+      }
+      delete payload.delivery_date;
+      delete payload.delivery_time;
+      await updateShipment(editingShipment.id, payload);
       showToast("Shipment updated successfully!");
       setShowEditModal(false);
       setEditingShipment(null);
@@ -445,6 +475,17 @@ export default function ShipmentsPage() {
       );
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleRevertToPending = async (shipment: Shipment) => {
+    if (shipment.status !== "consolidated") return;
+    try {
+      await updateShipment(shipment.id, { status: "pending" });
+      showToast(`${shipment.shipmentCode} reverted to pending`);
+      refreshShipments();
+    } catch (err: any) {
+      showToast(err?.message || "Failed to revert shipment.", "error");
     }
   };
 
@@ -716,17 +757,36 @@ export default function ShipmentsPage() {
                     </span>
                   </td>
                   <td>
-                    <button
-                      className="btn btn-ghost btn-icon"
-                      style={{ width: "28px", height: "28px" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openEditModal(s);
-                      }}
-                      title="Edit shipment"
-                    >
-                      <Edit size={13} />
-                    </button>
+                    <div style={{ display: "flex", gap: "4px" }}>
+                      <button
+                        className="btn btn-ghost btn-icon"
+                        style={{ width: "28px", height: "28px" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditModal(s);
+                        }}
+                        title="Edit shipment"
+                      >
+                        <Edit size={13} />
+                      </button>
+                      {s.status === "consolidated" && (
+                        <button
+                          className="btn btn-ghost btn-icon"
+                          style={{
+                            width: "28px",
+                            height: "28px",
+                            color: "#e5850b",
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRevertToPending(s);
+                          }}
+                          title="Revert to pending"
+                        >
+                          <RotateCcw size={13} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1641,23 +1701,115 @@ export default function ShipmentsPage() {
                       <option value="hazardous">☢️ Hazardous</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="label">Delivery Window</label>
-                    <select
-                      className="input"
-                      value={newShipment.delivery_window}
-                      onChange={(e) =>
-                        setNewShipment((p) => ({
-                          ...p,
-                          delivery_window: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="same">⏰ Same Day</option>
-                      <option value="next">📅 Next Day</option>
-                      <option value="two">📆 2-Day</option>
-                    </select>
+                </div>
+
+                {/* Schedule — Pickup & Delivery Date/Time */}
+                <div
+                  style={{
+                    marginTop: "16px",
+                    padding: "16px",
+                    background: "rgba(14,165,233,0.04)",
+                    borderRadius: "10px",
+                    border: "1px solid rgba(14,165,233,0.12)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      marginBottom: "12px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    🕐 Schedule
                   </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "12px",
+                    }}
+                  >
+                    <div>
+                      <label className="label">Pickup Date</label>
+                      <input
+                        className="input"
+                        type="date"
+                        value={newShipment.pickup_date}
+                        onChange={(e) =>
+                          setNewShipment((p) => ({
+                            ...p,
+                            pickup_date: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Pickup Time</label>
+                      <input
+                        className="input"
+                        type="time"
+                        value={newShipment.pickup_time}
+                        onChange={(e) =>
+                          setNewShipment((p) => ({
+                            ...p,
+                            pickup_time: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Delivery Date</label>
+                      <input
+                        className="input"
+                        type="date"
+                        value={newShipment.delivery_date}
+                        onChange={(e) =>
+                          setNewShipment((p) => ({
+                            ...p,
+                            delivery_date: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Delivery Time</label>
+                      <input
+                        className="input"
+                        type="time"
+                        value={newShipment.delivery_time}
+                        onChange={(e) =>
+                          setNewShipment((p) => ({
+                            ...p,
+                            delivery_time: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  {newShipment.pickup_date &&
+                    newShipment.delivery_date &&
+                    new Date(
+                      `${newShipment.delivery_date}T${newShipment.delivery_time}`,
+                    ) <=
+                      new Date(
+                        `${newShipment.pickup_date}T${newShipment.pickup_time}`,
+                      ) && (
+                      <div
+                        style={{
+                          marginTop: "8px",
+                          fontSize: "12px",
+                          color: "#ef4444",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        <AlertCircle size={13} /> Delivery must be after pickup
+                      </div>
+                    )}
                 </div>
 
                 <div style={{ marginTop: "16px" }}>
@@ -2029,6 +2181,68 @@ export default function ShipmentsPage() {
                     </select>
                   </div>
                 </div>
+
+                {/* Delivery Time Edit — only for pending shipments */}
+                {editingShipment?.status === "pending" && (
+                  <div
+                    style={{
+                      marginTop: "16px",
+                      padding: "16px",
+                      background: "rgba(14,165,233,0.04)",
+                      borderRadius: "10px",
+                      border: "1px solid rgba(14,165,233,0.12)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        marginBottom: "12px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                      }}
+                    >
+                      🕐 Delivery Schedule
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "12px",
+                      }}
+                    >
+                      <div>
+                        <label className="label">Delivery Date</label>
+                        <input
+                          className="input"
+                          type="date"
+                          value={editData.delivery_date}
+                          onChange={(e) =>
+                            setEditData((p) => ({
+                              ...p,
+                              delivery_date: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Delivery Time</label>
+                        <input
+                          className="input"
+                          type="time"
+                          value={editData.delivery_time}
+                          onChange={(e) =>
+                            setEditData((p) => ({
+                              ...p,
+                              delivery_time: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
               <div
                 className="card-footer"

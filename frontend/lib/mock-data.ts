@@ -51,6 +51,7 @@ export interface Cluster {
   estimatedCost: number;
   estimatedCo2: number;
   status: "pending" | "accepted" | "rejected";
+  chained?: boolean;
 }
 
 export interface ConsolidationPlan {

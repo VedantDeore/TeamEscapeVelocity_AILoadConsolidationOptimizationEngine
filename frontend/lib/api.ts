@@ -50,6 +50,10 @@ export async function updateShipment(id: string, data: any) {
   });
 }
 
+export async function progressShipmentStatus() {
+  return fetchApi<any>("/api/shipments/progress-status", { method: "POST" });
+}
+
 export async function deleteShipment(id: string) {
   return fetchApi<any>(`/api/shipments/${id}`, { method: "DELETE" });
 }
