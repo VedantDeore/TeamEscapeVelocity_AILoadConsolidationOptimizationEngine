@@ -1038,6 +1038,7 @@ export default function ShipmentsPage() {
                 maxWidth: "94vw",
                 maxHeight: "90vh",
                 overflowY: "auto",
+                background: "#ffffff",
               }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -1920,8 +1921,8 @@ export default function ShipmentsPage() {
             style={{
               position: "fixed",
               inset: 0,
-              background: "rgba(10,37,64,0.55)",
-              backdropFilter: "blur(6px)",
+              background: "rgba(10,37,64,0.45)",
+              backdropFilter: "blur(8px)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -1936,13 +1937,36 @@ export default function ShipmentsPage() {
                 maxWidth: "90vw",
                 maxHeight: "88vh",
                 overflowY: "auto",
+                background: "#ffffff",
+                boxShadow:
+                  "0 24px 64px rgba(0,0,0,0.18), 0 8px 24px rgba(0,0,0,0.08)",
+                border: "1px solid rgba(99,91,255,0.08)",
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="card-header">
+              <div
+                className="card-header"
+                style={{ padding: "22px 24px 12px" }}
+              >
                 <div>
-                  <div className="card-title">Edit Shipment</div>
-                  <div className="card-description">
+                  <div
+                    className="card-title"
+                    style={{
+                      fontSize: "18px",
+                      fontWeight: 700,
+                      color: "#0a2540",
+                    }}
+                  >
+                    Edit Shipment
+                  </div>
+                  <div
+                    className="card-description"
+                    style={{
+                      fontSize: "13px",
+                      color: "#425466",
+                      marginTop: "4px",
+                    }}
+                  >
                     {editingShipment.shipmentCode} · {editingShipment.status}
                   </div>
                 </div>
@@ -1953,7 +1977,7 @@ export default function ShipmentsPage() {
                   <X size={18} />
                 </button>
               </div>
-              <div className="card-body">
+              <div className="card-body" style={{ padding: "20px 24px" }}>
                 <div
                   style={{
                     display: "grid",
@@ -1962,7 +1986,16 @@ export default function ShipmentsPage() {
                   }}
                 >
                   <div>
-                    <label className="label">Origin City</label>
+                    <label
+                      className="label"
+                      style={{
+                        color: "#0a2540",
+                        fontWeight: 600,
+                        fontSize: "13px",
+                      }}
+                    >
+                      Origin City
+                    </label>
                     <input
                       className="input"
                       type="text"
@@ -1976,7 +2009,16 @@ export default function ShipmentsPage() {
                     />
                   </div>
                   <div>
-                    <label className="label">Destination City</label>
+                    <label
+                      className="label"
+                      style={{
+                        color: "#0a2540",
+                        fontWeight: 600,
+                        fontSize: "13px",
+                      }}
+                    >
+                      Destination City
+                    </label>
                     <input
                       className="input"
                       type="text"
@@ -1990,7 +2032,16 @@ export default function ShipmentsPage() {
                     />
                   </div>
                   <div>
-                    <label className="label">Weight (kg)</label>
+                    <label
+                      className="label"
+                      style={{
+                        color: "#0a2540",
+                        fontWeight: 600,
+                        fontSize: "13px",
+                      }}
+                    >
+                      Weight (kg)
+                    </label>
                     <input
                       className="input"
                       type="number"
@@ -2030,24 +2081,25 @@ export default function ShipmentsPage() {
                 {/* Dimension editor */}
                 <div
                   style={{
-                    marginTop: "16px",
-                    padding: "16px",
-                    background: "rgba(99,91,255,0.04)",
-                    borderRadius: "10px",
-                    border: "1px solid rgba(99,91,255,0.12)",
+                    marginTop: "20px",
+                    padding: "18px",
+                    background: "rgba(99,91,255,0.03)",
+                    borderRadius: "12px",
+                    border: "1px solid rgba(99,91,255,0.10)",
                   }}
                 >
                   <div
                     style={{
-                      fontSize: "13px",
-                      fontWeight: 600,
-                      marginBottom: "12px",
+                      fontSize: "14px",
+                      fontWeight: 650,
+                      color: "#0a2540",
+                      marginBottom: "14px",
                       display: "flex",
                       alignItems: "center",
-                      gap: "6px",
+                      gap: "8px",
                     }}
                   >
-                    <Box size={14} style={{ color: "var(--lorri-primary)" }} />{" "}
+                    <Box size={15} style={{ color: "var(--lorri-primary)" }} />{" "}
                     Package Dimensions
                   </div>
                   <div
@@ -2058,7 +2110,16 @@ export default function ShipmentsPage() {
                     }}
                   >
                     <div>
-                      <label className="label">Length (cm)</label>
+                      <label
+                        className="label"
+                        style={{
+                          color: "#0a2540",
+                          fontWeight: 600,
+                          fontSize: "13px",
+                        }}
+                      >
+                        Length (cm)
+                      </label>
                       <input
                         className="input"
                         type="number"
@@ -2077,7 +2138,16 @@ export default function ShipmentsPage() {
                       />
                     </div>
                     <div>
-                      <label className="label">Width (cm)</label>
+                      <label
+                        className="label"
+                        style={{
+                          color: "#0a2540",
+                          fontWeight: 600,
+                          fontSize: "13px",
+                        }}
+                      >
+                        Width (cm)
+                      </label>
                       <input
                         className="input"
                         type="number"
@@ -2096,7 +2166,16 @@ export default function ShipmentsPage() {
                       />
                     </div>
                     <div>
-                      <label className="label">Height (cm)</label>
+                      <label
+                        className="label"
+                        style={{
+                          color: "#0a2540",
+                          fontWeight: 600,
+                          fontSize: "13px",
+                        }}
+                      >
+                        Height (cm)
+                      </label>
                       <input
                         className="input"
                         type="number"
@@ -2145,11 +2224,20 @@ export default function ShipmentsPage() {
                     display: "grid",
                     gridTemplateColumns: "1fr 1fr",
                     gap: "16px",
-                    marginTop: "16px",
+                    marginTop: "20px",
                   }}
                 >
                   <div>
-                    <label className="label">Priority</label>
+                    <label
+                      className="label"
+                      style={{
+                        color: "#0a2540",
+                        fontWeight: 600,
+                        fontSize: "13px",
+                      }}
+                    >
+                      Priority
+                    </label>
                     <select
                       className="input"
                       value={editData.priority}
@@ -2163,7 +2251,16 @@ export default function ShipmentsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="label">Cargo Type</label>
+                    <label
+                      className="label"
+                      style={{
+                        color: "#0a2540",
+                        fontWeight: 600,
+                        fontSize: "13px",
+                      }}
+                    >
+                      Cargo Type
+                    </label>
                     <select
                       className="input"
                       value={editData.cargo_type}
@@ -2186,21 +2283,22 @@ export default function ShipmentsPage() {
                 {editingShipment?.status === "pending" && (
                   <div
                     style={{
-                      marginTop: "16px",
-                      padding: "16px",
-                      background: "rgba(14,165,233,0.04)",
-                      borderRadius: "10px",
-                      border: "1px solid rgba(14,165,233,0.12)",
+                      marginTop: "20px",
+                      padding: "18px",
+                      background: "rgba(14,165,233,0.03)",
+                      borderRadius: "12px",
+                      border: "1px solid rgba(14,165,233,0.10)",
                     }}
                   >
                     <div
                       style={{
-                        fontSize: "13px",
-                        fontWeight: 600,
-                        marginBottom: "12px",
+                        fontSize: "14px",
+                        fontWeight: 650,
+                        color: "#0a2540",
+                        marginBottom: "14px",
                         display: "flex",
                         alignItems: "center",
-                        gap: "6px",
+                        gap: "8px",
                       }}
                     >
                       🕐 Delivery Schedule
@@ -2213,7 +2311,16 @@ export default function ShipmentsPage() {
                       }}
                     >
                       <div>
-                        <label className="label">Delivery Date</label>
+                        <label
+                          className="label"
+                          style={{
+                            color: "#0a2540",
+                            fontWeight: 600,
+                            fontSize: "13px",
+                          }}
+                        >
+                          Delivery Date
+                        </label>
                         <input
                           className="input"
                           type="date"
@@ -2227,7 +2334,16 @@ export default function ShipmentsPage() {
                         />
                       </div>
                       <div>
-                        <label className="label">Delivery Time</label>
+                        <label
+                          className="label"
+                          style={{
+                            color: "#0a2540",
+                            fontWeight: 600,
+                            fontSize: "13px",
+                          }}
+                        >
+                          Delivery Time
+                        </label>
                         <input
                           className="input"
                           type="time"

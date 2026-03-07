@@ -136,7 +136,14 @@ export async function getDashboardData() {
   return fetchApi<{
     kpis: any[];
     utilization_trend: any[];
+    cost_savings_trend: { date: string; before: number; after: number }[];
+    util_change: number;
     activity_feed: any[];
+    opportunities: {
+      city: string;
+      shipment_count: number;
+      potential_saving: number;
+    }[];
   }>("/api/analytics/dashboard");
 }
 

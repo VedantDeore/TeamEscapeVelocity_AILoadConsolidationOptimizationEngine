@@ -540,7 +540,7 @@ function RouteMapPreview({
   routes: any[];
   onNavigate: () => void;
 }) {
-  const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [selected, setSelected] = useState<any>(routes[0] || null);
 
   return (

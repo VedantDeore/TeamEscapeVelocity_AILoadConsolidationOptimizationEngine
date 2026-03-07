@@ -1,6 +1,13 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap");
 @import "tailwindcss";
 
+/* @property for animated border angle */
+@property --border-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
 /* ============================================================
    LORRI — Premium Stripe-Inspired Design System v2
    AI Load Consolidation Optimization Engine
@@ -307,8 +314,13 @@ body {
    PAGE HEADER — Stripe gradient hero style
    ════════════════════════════════════════════════════════════ */
 .page-header {
-  background: #ffffff;
-  border-bottom: 1px solid var(--border-primary);
+  background: linear-gradient(
+    135deg,
+    rgba(99, 91, 255, 0.04) 0%,
+    #ffffff 60%,
+    rgba(14, 165, 233, 0.03) 100%
+  );
+  border-bottom: 1px solid rgba(99, 91, 255, 0.12);
   padding: 24px 32px 20px;
   display: flex;
   align-items: center;
@@ -334,6 +346,11 @@ body {
 .page-body {
   padding: 28px 32px;
   flex: 1;
+  background: linear-gradient(
+    180deg,
+    rgba(99, 91, 255, 0.04) 0%,
+    transparent 50%
+  );
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -341,18 +358,25 @@ body {
    ════════════════════════════════════════════════════════════ */
 .card {
   background: #ffffff;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-primary);
   border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.04);
   transition:
-    box-shadow 0.15s ease,
-    border-color 0.15s ease;
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.18s ease;
   overflow: hidden;
+  isolation: isolate;
 }
 
 .card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-  border-color: #d1d5db;
+  box-shadow:
+    0 8px 24px rgba(99, 91, 255, 0.16),
+    0 2px 6px rgba(0, 0, 0, 0.05);
+  border-color: rgba(99, 91, 255, 0.25);
+  transform: translateY(-1px);
 }
 
 .card-header {
@@ -402,7 +426,7 @@ body {
   border-radius: var(--radius-xl);
   padding: 22px;
   box-shadow: var(--shadow-sm);
-  transition: all 0.15s ease;
+  transition: all 0.18s ease;
   position: relative;
   overflow: hidden;
 }
@@ -422,6 +446,7 @@ body {
 .kpi-card:hover {
   box-shadow: var(--shadow-md);
   border-color: #d0d5dd;
+  transform: translateY(-2px);
 }
 
 .kpi-card:hover::after {
@@ -642,6 +667,161 @@ body {
 }
 
 /* ════════════════════════════════════════════════════════════
+   TEAM / ABOUT US CARDS (Stripe marketing style)
+   ════════════════════════════════════════════════════════════ */
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 768px) {
+  .team-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.team-card {
+  display: flex;
+  align-items: stretch;
+  background: #f6f9fc;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+  min-height: 120px;
+  border: 1px solid rgba(99, 91, 255, 0.06);
+}
+
+.team-card:hover {
+  box-shadow: 0 8px 30px rgba(99, 91, 255, 0.12);
+  transform: translateY(-2px);
+}
+
+.team-card-text {
+  flex: 1;
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.team-card-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-bottom: 8px;
+  border: 2px solid rgba(99, 91, 255, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.team-card-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.team-card-role {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.team-card-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.team-card-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lorri-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.team-card-link:hover {
+  color: var(--lorri-primary-hover);
+}
+
+.team-card-link-github {
+  color: var(--text-secondary);
+}
+
+.team-card-link-github:hover {
+  color: var(--text-primary);
+}
+
+.team-card:hover .team-card-link {
+  color: var(--lorri-primary-hover);
+}
+
+.team-card-art {
+  width: 45%;
+  min-width: 140px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Purple — radial bloom like Stripe Startups */
+.team-gradient-purple {
+  background:
+    radial-gradient(circle at 30% 60%, #c084fc 0%, transparent 60%),
+    radial-gradient(circle at 80% 30%, #ec4899 0%, transparent 55%),
+    linear-gradient(135deg, #7c3aed 0%, #a855f7 50%, #ec4899 100%);
+}
+
+/* Orange — geometric facets like Stripe Atlas */
+.team-gradient-orange {
+  background: linear-gradient(210deg, #fb923c 0%, #f97316 40%, #ea580c 100%);
+}
+.team-gradient-orange::before,
+.team-gradient-orange::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+.team-gradient-orange::before {
+  bottom: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(200deg, #fbbf24 0%, transparent 50%);
+  clip-path: polygon(40% 0%, 100% 0%, 100% 100%, 20% 100%);
+}
+.team-gradient-orange::after {
+  bottom: 0;
+  right: 0;
+  width: 80%;
+  height: 80%;
+  background: linear-gradient(220deg, #fde68a 0%, transparent 55%);
+  clip-path: polygon(50% 20%, 100% 0%, 100% 100%, 30% 100%);
+}
+
+/* Cyan — diagonal gradient */
+.team-gradient-cyan {
+  background:
+    radial-gradient(circle at 20% 80%, #22d3ee 0%, transparent 55%),
+    linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+}
+
+/* Green — organic gradient */
+.team-gradient-green {
+  background:
+    radial-gradient(circle at 70% 30%, #34d399 0%, transparent 55%),
+    linear-gradient(135deg, #059669 0%, #10b981 50%, #06b6d4 100%);
+}
+
+/* ════════════════════════════════════════════════════════════
    BUTTONS
    ════════════════════════════════════════════════════════════ */
 .btn {
@@ -736,6 +916,55 @@ body {
   padding: 11px 22px;
   font-size: 14.5px;
   border-radius: var(--radius-md);
+}
+
+/* Rotating border glow for primary large button */
+.btn-primary.btn-lg {
+  border: 2.5px solid transparent;
+  background:
+    linear-gradient(var(--lorri-primary), var(--lorri-primary)) padding-box,
+    conic-gradient(
+        from var(--border-angle, 0deg),
+        #635bff,
+        #818cf8,
+        #0ea5e9,
+        #0caf60,
+        #f59e0b,
+        #ec4899,
+        #a78bfa,
+        #635bff
+      )
+      border-box;
+  box-shadow: 0 0 12px rgba(99, 91, 255, 0.3);
+  animation: rotate-border-angle 3s linear infinite;
+}
+
+.btn-primary.btn-lg:hover {
+  background:
+    linear-gradient(var(--lorri-primary-hover), var(--lorri-primary-hover))
+      padding-box,
+    conic-gradient(
+        from var(--border-angle, 0deg),
+        #635bff,
+        #818cf8,
+        #0ea5e9,
+        #0caf60,
+        #f59e0b,
+        #ec4899,
+        #a78bfa,
+        #635bff
+      )
+      border-box;
+  box-shadow: 0 0 20px rgba(99, 91, 255, 0.45);
+}
+
+@keyframes rotate-border-angle {
+  0% {
+    --border-angle: 0deg;
+  }
+  100% {
+    --border-angle: 360deg;
+  }
 }
 
 .btn-icon {
@@ -859,17 +1088,18 @@ body {
    ════════════════════════════════════════════════════════════ */
 .input {
   width: 100%;
-  padding: 9px 12px;
-  background: var(--bg-input);
+  padding: 10px 14px;
+  background: #ffffff;
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   color: var(--text-primary);
-  font-size: 13.5px;
+  font-size: 14px;
+  font-weight: 500;
   transition:
-    border-color 0.12s,
-    box-shadow 0.12s;
+    border-color 0.15s,
+    box-shadow 0.15s;
   outline: none;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .input::placeholder {
@@ -954,9 +1184,10 @@ select.input,
 }
 
 .alert-warning {
-  background: #fffbeb;
-  border-color: #fde68a;
+  background: linear-gradient(135deg, #fff8e1 0%, #fff3e0 100%);
+  border-color: #fbbf24;
   color: #78350f;
+  box-shadow: 0 2px 10px rgba(245, 158, 11, 0.14);
 }
 
 .alert-info {
@@ -1362,17 +1593,24 @@ select.input,
 .stat-highlight-bar {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  border: 1px solid var(--border-primary);
+  border: 1px solid rgba(99, 91, 255, 0.12);
   border-radius: var(--radius-xl);
   overflow: hidden;
-  background: #ffffff;
-  box-shadow: var(--shadow-sm);
+  background: linear-gradient(
+    135deg,
+    rgba(99, 91, 255, 0.04) 0%,
+    #ffffff 60%,
+    rgba(14, 165, 233, 0.03) 100%
+  );
+  box-shadow:
+    0 2px 10px rgba(99, 91, 255, 0.1),
+    0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .stat-highlight-item {
   padding: 24px 20px;
-  border-right: 1px solid var(--border-secondary);
-  transition: background 0.12s;
+  border-right: 1px solid rgba(99, 91, 255, 0.1);
+  transition: background 0.15s;
 }
 
 .stat-highlight-item:last-child {
@@ -1380,7 +1618,7 @@ select.input,
 }
 
 .stat-highlight-item:hover {
-  background: var(--bg-secondary);
+  background: rgba(99, 91, 255, 0.06);
 }
 
 .stat-highlight-value {

@@ -22,28 +22,41 @@ def dashboard_kpis():
     except Exception:
         total_shp = pending_shp = consol_shp = 0
 
-    # ── latest consolidation plan KPIs ──
+    # ── aggregated consolidation plan KPIs (sum across ALL plans) ──
     try:
-        plan = sb.table("consolidation_plans").select(
+        all_plans = sb.table("consolidation_plans").select(
             "avg_utilization, total_cost_before, total_cost_after, "
             "co2_before, co2_after, trips_before, trips_after, total_clusters"
-        ).order("created_at", desc=True).limit(1).execute()
+        ).order("created_at", desc=True).execute()
 
-        p = plan.data[0] if plan.data else {}
-        avg_util    = p.get("avg_utilization", 87)
-        cost_before = p.get("total_cost_before", 450000) or 450000
-        cost_after  = p.get("total_cost_after",  310000) or 310000
-        cost_saved  = cost_before - cost_after
-        co2_before  = p.get("co2_before", 2400) or 2400
-        co2_after   = p.get("co2_after",  1600) or 1600
-        co2_saved   = co2_before - co2_after
-        trips_before = p.get("trips_before", 47) or 47
-        trips_after  = p.get("trips_after",  31) or 31
-        trips_elim   = trips_before - trips_after
-        consol_rate  = round(consol_shp / max(total_shp, 1) * 100, 1)
+        plans_list = all_plans.data or []
+        if plans_list:
+            total_cost_before = sum(p.get("total_cost_before", 0) or 0 for p in plans_list)
+            total_cost_after  = sum(p.get("total_cost_after", 0) or 0 for p in plans_list)
+            cost_saved  = total_cost_before - total_cost_after
+            cost_before = total_cost_before  # for percentage calc
+
+            total_co2_before = sum(p.get("co2_before", 0) or 0 for p in plans_list)
+            total_co2_after  = sum(p.get("co2_after", 0) or 0 for p in plans_list)
+            co2_saved   = total_co2_before - total_co2_after
+            co2_before  = total_co2_before
+
+            total_trips_before = sum(p.get("trips_before", 0) or 0 for p in plans_list)
+            total_trips_after  = sum(p.get("trips_after", 0) or 0 for p in plans_list)
+            trips_elim   = total_trips_before - total_trips_after
+            trips_before = total_trips_before
+
+            # avg utilization = weighted average or just latest plan's value
+            avg_util = plans_list[0].get("avg_utilization", 0) or 0
+        else:
+            avg_util = 0; cost_saved = 0; cost_before = 1
+            co2_saved = 0; co2_before = 1
+            trips_elim = 0; trips_before = 1
+        consol_rate = round(consol_shp / max(total_shp, 1) * 100, 1)
     except Exception:
-        avg_util = 87; cost_saved = 140000; co2_saved = 800
-        trips_elim = 16; consol_rate = 87
+        avg_util = 0; cost_saved = 0; cost_before = 1
+        co2_saved = 0; co2_before = 1
+        trips_elim = 0; trips_before = 1; consol_rate = 0
 
     # ── build dynamic KPI cards ──
     kpis = [
@@ -104,6 +117,58 @@ def dashboard_kpis():
     except Exception:
         trend_d = []
 
+    # ── cost savings trend from consolidation plans ──
+    cost_savings_trend = []
+    try:
+        plans_hist = sb.table("consolidation_plans").select(
+            "total_cost_before, total_cost_after, avg_utilization, created_at"
+        ).order("created_at", desc=False).execute()
+
+        if plans_hist.data:
+            from datetime import datetime
+            for p in plans_hist.data:
+                cb = p.get("total_cost_before", 0) or 0
+                ca = p.get("total_cost_after", 0) or 0
+                created = p.get("created_at", "")
+                try:
+                    dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    label = dt.strftime("%b %d")
+                except Exception:
+                    label = created[:10] if created else "—"
+                cost_savings_trend.append({
+                    "date": label,
+                    "before": round(cb),
+                    "after": round(ca),
+                })
+
+            # Build utilization trend from plans if trend table is empty
+            if not trend_d:
+                for p in plans_hist.data:
+                    util = p.get("avg_utilization", 0) or 0
+                    cb = p.get("total_cost_before", 0) or 0
+                    created = p.get("created_at", "")
+                    try:
+                        dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                        label = dt.strftime("%b %d")
+                    except Exception:
+                        label = created[:10] if created else "—"
+                    trend_d.append({
+                        "day": label,
+                        "date": label,
+                        "utilization": round(util, 1),
+                        "cost": round(cb),
+                    })
+    except Exception:
+        pass
+
+    # ── utilization change pct ──
+    util_change = 0
+    if trend_d and len(trend_d) >= 2:
+        first_util = trend_d[0].get("utilization", 0) or 0
+        last_util = trend_d[-1].get("utilization", 0) or 0
+        if first_util > 0:
+            util_change = round((last_util - first_util) / first_util * 100, 1)
+
     # ── activity feed ──
     try:
         activities = sb.table("activity_feed").select("*").order("created_at", desc=True).limit(10).execute()
@@ -112,25 +177,33 @@ def dashboard_kpis():
         act_d = []
 
     # ── consolidation opportunities alert ──
+    opportunities = []
     try:
         pending_cities = sb.table("shipments").select("dest_city").eq("status", "pending").execute()
         city_counts: dict[str, int] = {}
         for row in (pending_cities.data or []):
             c = row.get("dest_city", "")
-            city_counts[c] = city_counts.get(c, 0) + 1
-        opportunities = [
-            {"city": city, "shipment_count": cnt, "potential_saving": cnt * 8000}
-            for city, cnt in city_counts.items() if cnt >= 4
-        ]
+            if c:
+                city_counts[c] = city_counts.get(c, 0) + 1
+        opportunities = sorted(
+            [
+                {"city": city, "shipment_count": cnt, "potential_saving": cnt * 2000}
+                for city, cnt in city_counts.items() if cnt >= 3
+            ],
+            key=lambda x: x["shipment_count"],
+            reverse=True,
+        )
     except Exception:
-        opportunities = []
+        pass
 
     return jsonify({
-        "kpis":             kpis,
-        "utilization_trend": trend_d,
-        "activity_feed":    act_d,
-        "opportunities":    opportunities,
-        "live":             True,
+        "kpis":               kpis,
+        "utilization_trend":  trend_d,
+        "cost_savings_trend": cost_savings_trend,
+        "util_change":        util_change,
+        "activity_feed":      act_d,
+        "opportunities":      opportunities,
+        "live":               True,
     })
 
 
