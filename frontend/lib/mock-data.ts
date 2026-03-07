@@ -145,29 +145,40 @@ const priorities: Shipment['priority'][] = ['normal', 'express', 'critical'];
 const cargoTypes: Shipment['cargoType'][] = ['general', 'fragile', 'refrigerated', 'hazardous'];
 const statuses: Shipment['status'][] = ['pending', 'consolidated', 'in_transit', 'delivered'];
 
+// Seeded PRNG (mulberry32) — deterministic demo data across refreshes
+function mulberry32(seed: number) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rng = mulberry32(42);
+
 function generateShipments(count: number): Shipment[] {
   const shipments: Shipment[] = [];
   for (let i = 0; i < count; i++) {
-    const origin = CITIES[Math.floor(Math.random() * CITIES.length)];
-    let dest = CITIES[Math.floor(Math.random() * CITIES.length)];
+    const origin = CITIES[Math.floor(rng() * CITIES.length)];
+    let dest = CITIES[Math.floor(rng() * CITIES.length)];
     while (dest.name === origin.name) {
-      dest = CITIES[Math.floor(Math.random() * CITIES.length)];
+      dest = CITIES[Math.floor(rng() * CITIES.length)];
     }
-    const weight = Math.floor(50 + Math.random() * 4950);
-    const length = Math.floor(50 + Math.random() * 250);
-    const width = Math.floor(40 + Math.random() * 160);
-    const height = Math.floor(30 + Math.random() * 170);
+    const weight = Math.floor(50 + rng() * 4950);
+    const length = Math.floor(50 + rng() * 250);
+    const width = Math.floor(40 + rng() * 160);
+    const height = Math.floor(30 + rng() * 170);
     const volume = parseFloat(((length * width * height) / 1000000).toFixed(2));
-    
+
     shipments.push({
       id: `shp-${String(i + 1).padStart(4, '0')}`,
       shipmentCode: `SHP-${String(i + 1).padStart(4, '0')}`,
       originCity: origin.name,
-      originLat: origin.lat + (Math.random() - 0.5) * 0.1,
-      originLng: origin.lng + (Math.random() - 0.5) * 0.1,
+      originLat: origin.lat + (rng() - 0.5) * 0.1,
+      originLng: origin.lng + (rng() - 0.5) * 0.1,
       destCity: dest.name,
-      destLat: dest.lat + (Math.random() - 0.5) * 0.1,
-      destLng: dest.lng + (Math.random() - 0.5) * 0.1,
+      destLat: dest.lat + (rng() - 0.5) * 0.1,
+      destLng: dest.lng + (rng() - 0.5) * 0.1,
       weightKg: weight,
       volumeM3: volume,
       lengthCm: length,
@@ -175,10 +186,10 @@ function generateShipments(count: number): Shipment[] {
       heightCm: height,
       deliveryWindowStart: '2026-03-07T08:00:00Z',
       deliveryWindowEnd: '2026-03-08T18:00:00Z',
-      priority: priorities[Math.floor(Math.random() * priorities.length)],
-      cargoType: cargoTypes[Math.floor(Math.random() * cargoTypes.length)],
-      status: i < 90 ? 'pending' : statuses[Math.floor(Math.random() * statuses.length)],
-      createdAt: new Date(Date.now() - Math.random() * 7 * 24 * 3600 * 1000).toISOString(),
+      priority: priorities[Math.floor(rng() * priorities.length)],
+      cargoType: cargoTypes[Math.floor(rng() * cargoTypes.length)],
+      status: i < 90 ? 'pending' : statuses[Math.floor(rng() * statuses.length)],
+      createdAt: new Date(Date.now() - rng() * 7 * 24 * 3600 * 1000).toISOString(),
     });
   }
   return shipments;
