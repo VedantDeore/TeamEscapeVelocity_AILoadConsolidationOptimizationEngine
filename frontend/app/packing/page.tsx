@@ -6,7 +6,6 @@ import {
   RotateCcw,
   Play,
   Pause,
-  Truck,
   Plus,
   Trash2,
   Crosshair,
@@ -417,7 +416,7 @@ export default function PackingPage() {
   const [showCOG, setShowCOG] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
-  const [autoRotate, setAutoRotate] = useState(false);
+  const [autoRotate, setAutoRotate] = useState(true);
   const [heatmapMode, setHeatmapMode] = useState(false);
   const [explodedView, setExplodedView] = useState(false);
   const [showLoadingOrder, setShowLoadingOrder] = useState(false);
@@ -574,8 +573,12 @@ export default function PackingPage() {
     if (isAnimating) {
       if (animRef.current) clearInterval(animRef.current);
       setIsAnimating(false);
+      setAutoRotate(true);
       return;
     }
+    // Pause auto-rotate, set best viewing angle, then start animation
+    setAutoRotate(false);
+    setViewPreset("perspective");
     setIsAnimating(true);
     setAnimationStep(0);
     let step = 0;
@@ -585,6 +588,7 @@ export default function PackingPage() {
       if (step >= packingData.placements.length) {
         if (animRef.current) clearInterval(animRef.current);
         setIsAnimating(false);
+        setAutoRotate(true);
       }
     }, animSpeed);
   }, [packingData, isAnimating, animSpeed]);
@@ -863,23 +867,26 @@ export default function PackingPage() {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "8px 16px",
-          borderBottom: "1px solid #e3e8ee",
-          background: "#fff",
+          padding: "10px 20px",
+          borderBottom: "1px solid rgba(99,91,255,.12)",
+          background: "linear-gradient(135deg, rgba(255,255,255,.95) 0%, rgba(240,243,255,.95) 100%)",
+          backdropFilter: "blur(12px)",
           flexShrink: 0,
+          boxShadow: "0 1px 8px rgba(99,91,255,.06)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div
             style={{
               background: "linear-gradient(135deg,#635BFF,#10b981)",
-              borderRadius: 8,
-              width: 30,
-              height: 30,
+              borderRadius: 10,
+              width: 34,
+              height: 34,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 15,
+              fontSize: 17,
+              boxShadow: "0 2px 8px rgba(99,91,255,.25)",
             }}
           >
             📦
@@ -887,10 +894,11 @@ export default function PackingPage() {
           <div>
             <div
               style={{
-                fontWeight: 700,
-                fontSize: 14,
+                fontWeight: 800,
+                fontSize: 14.5,
                 color: "#0a2540",
-                letterSpacing: ".5px",
+                letterSpacing: ".6px",
+                lineHeight: 1.2,
               }}
             >
               LORRI · 3D PACK SIM
@@ -899,7 +907,8 @@ export default function PackingPage() {
               style={{
                 fontSize: 9,
                 color: "#8792a2",
-                letterSpacing: ".5px",
+                letterSpacing: ".6px",
+                fontWeight: 500,
               }}
             >
               AI LOAD CONSOLIDATION ENGINE
@@ -908,32 +917,100 @@ export default function PackingPage() {
         </div>
 
         {/* Truck pills */}
-        <div style={{ display: "flex", gap: 4 }}>
-          {vehicles.map((v, i) => (
-            <button
-              key={v.id}
-              onClick={() => setSelectedVehicleIdx(i)}
-              style={{
-                padding: "5px 10px",
-                borderRadius: 999,
-                fontSize: 10.5,
-                fontWeight: 550,
-                border: "1px solid",
-                cursor: "pointer",
-                transition: "all .15s",
-                background: selectedVehicleIdx === i ? "#635BFF" : "#fff",
-                color: selectedVehicleIdx === i ? "#fff" : "#425466",
-                borderColor: selectedVehicleIdx === i ? "#635BFF" : "#e3e8ee",
-              }}
-            >
-              <Truck size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
-              {v.name}
-            </button>
-          ))}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", alignItems: "center" }}>
+          {vehicles.map((v, i) => {
+            const isActive = selectedVehicleIdx === i;
+            const volM3 = ((v.lengthCm * v.widthCm * v.heightCm) / 1e6).toFixed(1);
+            const iconColor = isActive ? "#fff" : "#635BFF";
+            return (
+              <button
+                key={v.id}
+                onClick={() => setSelectedVehicleIdx(i)}
+                style={{
+                  padding: "0",
+                  borderRadius: 12,
+                  border: isActive ? "2px solid #635BFF" : "1.5px solid #e3e8ee",
+                  cursor: "pointer",
+                  transition: "all .25s ease",
+                  background: isActive
+                    ? "linear-gradient(135deg, #635BFF 0%, #4f46e5 100%)"
+                    : "rgba(255,255,255,.92)",
+                  boxShadow: isActive
+                    ? "0 4px 16px rgba(99,91,255,.35), 0 0 0 3px rgba(99,91,255,.1)"
+                    : "0 1px 4px rgba(0,0,0,.05)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 0,
+                  overflow: "hidden",
+                  minWidth: 120,
+                }}
+              >
+                {/* Vehicle SVG icon area */}
+                <div style={{
+                  width: 38,
+                  height: 46,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: isActive ? "rgba(255,255,255,.15)" : "rgba(99,91,255,.06)",
+                  flexShrink: 0,
+                }}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="1" y="6" width="14" height="10" rx="1.5" stroke={iconColor} strokeWidth="1.6" fill={isActive ? "rgba(255,255,255,.12)" : "rgba(99,91,255,.08)"} />
+                    <path d="M15 10H19.2C19.6 10 19.95 10.25 20.1 10.6L21.5 14H15V10Z" stroke={iconColor} strokeWidth="1.5" fill={isActive ? "rgba(255,255,255,.08)" : "rgba(99,91,255,.05)"} strokeLinejoin="round" />
+                    <line x1="15" y1="14" x2="15" y2="16" stroke={iconColor} strokeWidth="1.5" />
+                    <line x1="21.5" y1="14" x2="21.5" y2="16" stroke={iconColor} strokeWidth="1.2" />
+                    <rect x="15" y="14" width="7" height="2" rx="0.5" stroke={iconColor} strokeWidth="1.2" fill={isActive ? "rgba(255,255,255,.08)" : "rgba(99,91,255,.04)"} />
+                    <circle cx="6" cy="17.5" r="2" stroke={iconColor} strokeWidth="1.5" fill={isActive ? "rgba(255,255,255,.2)" : "rgba(99,91,255,.1)"} />
+                    <circle cx="6" cy="17.5" r="0.7" fill={iconColor} />
+                    <circle cx="19" cy="17.5" r="2" stroke={iconColor} strokeWidth="1.5" fill={isActive ? "rgba(255,255,255,.2)" : "rgba(99,91,255,.1)"} />
+                    <circle cx="19" cy="17.5" r="0.7" fill={iconColor} />
+                  </svg>
+                </div>
+                {/* Vehicle info */}
+                <div style={{
+                  padding: "5px 10px 5px 6px",
+                  textAlign: "left",
+                  lineHeight: 1.25,
+                }}>
+                  <div style={{
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    color: isActive ? "#fff" : "#0a2540",
+                    letterSpacing: ".3px",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {v.name}
+                  </div>
+                  <div style={{
+                    fontSize: 8,
+                    fontWeight: 500,
+                    color: isActive ? "rgba(255,255,255,.7)" : "#8792a2",
+                    marginTop: 1,
+                    whiteSpace: "nowrap",
+                  }}>
+                    {volM3}m³ · {(v.maxWeightKg / 1000).toFixed(1)}t
+                  </div>
+                </div>
+                {/* Active indicator dot */}
+                {isActive && (
+                  <div style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "#4ade80",
+                    marginRight: 8,
+                    flexShrink: 0,
+                    boxShadow: "0 0 6px rgba(74,222,128,.6)",
+                  }} />
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* Actions */}
-        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
           <Btn
             onClick={() => setAutoRotate((a) => !a)}
             active={autoRotate}
@@ -944,21 +1021,21 @@ export default function PackingPage() {
             onClick={handleAnimate}
             active={isAnimating}
             accent="#f59e0b"
-            label={isAnimating ? "⏳ LOADING..." : "▶ ANIMATE"}
+            label={isAnimating ? "⏳ ANIMATING" : "▶ ANIMATE"}
           />
           <Btn onClick={handleShowAll} accent="#10b981" label="SHOW ALL" />
           <Btn onClick={handleRecalculate} accent="#0ea5e9" label="⚡ PACK" />
           <button
             onClick={takeScreenshot}
             title="Screenshot"
-            style={iconBtnStyle}
+            style={{...iconBtnStyle, borderRadius: 8, padding: "5px 7px"}}
           >
             <Camera size={13} />
           </button>
           <button
             onClick={() => window.print()}
             title="Print"
-            style={iconBtnStyle}
+            style={{...iconBtnStyle, borderRadius: 8, padding: "5px 7px"}}
           >
             <Printer size={13} />
           </button>
@@ -968,7 +1045,7 @@ export default function PackingPage() {
       {/* ────── MAIN ────── */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* ── 3D VIEWPORT ── */}
-        <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+        <div style={{ flex: 1, position: "relative", overflow: "hidden", background: "linear-gradient(180deg, #f0f2f8 0%, #e8ecf4 100%)" }}>
           <PackingVisualizer3D
             data={packingData}
             isAnimating={isAnimating}
@@ -995,12 +1072,18 @@ export default function PackingPage() {
           <div
             style={{
               position: "absolute",
-              top: 10,
-              left: 10,
+              top: 12,
+              left: 12,
               display: "flex",
               flexDirection: "column",
               gap: 3,
               zIndex: 10,
+              background: "rgba(255,255,255,.72)",
+              backdropFilter: "blur(12px)",
+              borderRadius: 10,
+              padding: 5,
+              border: "1px solid rgba(227,232,238,.5)",
+              boxShadow: "0 2px 12px rgba(0,0,0,.06)",
             }}
           >
             {VIEW_LABELS.map((v) => (
@@ -1008,40 +1091,41 @@ export default function PackingPage() {
                 key={v.key}
                 onClick={() => setViewPreset(v.key)}
                 style={{
-                  padding: "3px 8px",
-                  borderRadius: 5,
+                  padding: "4px 10px",
+                  borderRadius: 6,
                   fontSize: 9.5,
                   fontWeight: 600,
                   background:
-                    viewPreset === v.key ? "#635BFF" : "rgba(255,255,255,.88)",
+                    viewPreset === v.key ? "linear-gradient(135deg, #635BFF, #4f46e5)" : "transparent",
                   color: viewPreset === v.key ? "#fff" : "#425466",
-                  border: `1px solid ${viewPreset === v.key ? "#635BFF" : "rgba(227,232,238,.6)"}`,
+                  border: "none",
                   cursor: "pointer",
-                  backdropFilter: "blur(4px)",
                   letterSpacing: ".5px",
+                  transition: "all .15s ease",
+                  textAlign: "left",
                 }}
               >
-                <span style={{ marginRight: 3 }}>{v.icon}</span>
+                <span style={{ marginRight: 4 }}>{v.icon}</span>
                 {v.key.toUpperCase()}
               </button>
             ))}
+            <div style={{ height: 1, background: "rgba(227,232,238,.6)", margin: "2px 4px" }} />
             <button
               onClick={() => {
                 setViewPreset("perspective");
-                setAutoRotate(false);
               }}
               style={{
-                padding: "3px 8px",
-                borderRadius: 5,
+                padding: "4px 10px",
+                borderRadius: 6,
                 fontSize: 9.5,
                 fontWeight: 600,
-                marginTop: 2,
-                background: "rgba(255,255,255,.88)",
+                background: "transparent",
                 color: "#8792a2",
-                border: "1px solid rgba(227,232,238,.6)",
+                border: "none",
                 cursor: "pointer",
-                backdropFilter: "blur(4px)",
                 letterSpacing: ".5px",
+                textAlign: "left",
+                transition: "all .15s ease",
               }}
             >
               ↺ RESET
@@ -1052,15 +1136,16 @@ export default function PackingPage() {
           <div
             style={{
               position: "absolute",
-              bottom: 12,
-              left: 12,
-              background: "rgba(255,255,255,.92)",
-              border: "1px solid #e3e8ee",
-              borderRadius: 10,
-              padding: "10px 14px",
-              backdropFilter: "blur(8px)",
-              minWidth: 190,
+              bottom: 14,
+              left: 14,
+              background: "rgba(255,255,255,.78)",
+              border: "1px solid rgba(227,232,238,.5)",
+              borderRadius: 12,
+              padding: "12px 16px",
+              backdropFilter: "blur(14px)",
+              minWidth: 200,
               zIndex: 10,
+              boxShadow: "0 4px 20px rgba(0,0,0,.08)",
             }}
           >
             <div
@@ -1142,17 +1227,18 @@ export default function PackingPage() {
             <div
               style={{
                 position: "absolute",
-                top: 12,
-                right: 12,
-                background: "rgba(255,255,255,.92)",
-                borderRadius: 10,
-                padding: "10px 14px",
+                top: 14,
+                right: 14,
+                background: "rgba(255,255,255,.82)",
+                borderRadius: 12,
+                padding: "12px 16px",
                 fontSize: 12,
                 color: "#0a2540",
-                boxShadow: "0 4px 16px rgba(0,0,0,.10)",
-                border: "1px solid #e3e8ee",
-                maxWidth: 220,
+                boxShadow: "0 4px 20px rgba(99,91,255,.12)",
+                border: "1px solid rgba(99,91,255,.15)",
+                maxWidth: 230,
                 zIndex: 10,
+                backdropFilter: "blur(14px)",
               }}
             >
               <div
@@ -1184,15 +1270,16 @@ export default function PackingPage() {
             <div
               style={{
                 position: "absolute",
-                top: 12,
-                right: 12,
-                background: "rgba(255,255,255,.95)",
-                border: `1px solid ${selectedPlacement.item.color}44`,
-                borderRadius: 10,
-                padding: "12px 16px",
-                backdropFilter: "blur(8px)",
-                minWidth: 190,
+                top: 14,
+                right: 14,
+                background: "rgba(255,255,255,.82)",
+                border: `1.5px solid ${selectedPlacement.item.color}44`,
+                borderRadius: 12,
+                padding: "14px 18px",
+                backdropFilter: "blur(14px)",
+                minWidth: 200,
                 zIndex: 10,
+                boxShadow: "0 4px 20px rgba(0,0,0,.08)",
               }}
             >
               <div
@@ -1276,14 +1363,19 @@ export default function PackingPage() {
           <div
             style={{
               position: "absolute",
-              bottom: 12,
-              right: 12,
+              bottom: 14,
+              right: 14,
               fontSize: 9,
-              color: "#8792a2",
+              color: "rgba(135,146,162,.8)",
               textAlign: "right",
-              lineHeight: 1.8,
-              letterSpacing: ".3px",
+              lineHeight: 1.9,
+              letterSpacing: ".4px",
               zIndex: 10,
+              background: "rgba(255,255,255,.55)",
+              backdropFilter: "blur(10px)",
+              borderRadius: 8,
+              padding: "8px 12px",
+              border: "1px solid rgba(227,232,238,.4)",
             }}
           >
             LEFT DRAG · ROTATE
@@ -1293,21 +1385,20 @@ export default function PackingPage() {
             SCROLL · ZOOM
             <br />
             CLICK · SELECT
-            <br />
-            R=Rotate · Space=Animate · E=Explode
           </div>
         </div>
 
         {/* ── SIDEBAR ── */}
         <div
           style={{
-            width: 300,
+            width: 310,
             flexShrink: 0,
-            borderLeft: "1px solid #e3e8ee",
+            borderLeft: "1px solid rgba(227,232,238,.6)",
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
-            background: "#fff",
+            background: "linear-gradient(180deg, #fff 0%, #fafbfd 100%)",
+            boxShadow: "-2px 0 12px rgba(0,0,0,.03)",
           }}
         >
           {/* Tab bar */}
@@ -1316,6 +1407,7 @@ export default function PackingPage() {
               display: "flex",
               borderBottom: "1px solid #e3e8ee",
               flexShrink: 0,
+              background: "rgba(255,255,255,.9)",
             }}
           >
             {(
@@ -2401,24 +2493,27 @@ export default function PackingPage() {
           {/* Bottom pack button */}
           <div
             style={{
-              padding: "10px 12px",
+              padding: "12px 14px",
               borderTop: "1px solid #e3e8ee",
               flexShrink: 0,
+              background: "rgba(255,255,255,.9)",
             }}
           >
             <button
               onClick={handleRecalculate}
               style={{
                 width: "100%",
-                padding: "10px",
+                padding: "11px",
                 fontSize: 12,
                 fontWeight: 700,
-                background: "linear-gradient(135deg, #635BFF, #10b981)",
+                background: "linear-gradient(135deg, #635BFF 0%, #10b981 100%)",
                 border: "none",
-                borderRadius: 7,
+                borderRadius: 9,
                 color: "#fff",
                 cursor: "pointer",
-                letterSpacing: 1,
+                letterSpacing: 1.2,
+                boxShadow: "0 3px 12px rgba(99,91,255,.25)",
+                transition: "all .2s ease",
               }}
             >
               ⚡ OPTIMIZE PACKING
@@ -2456,16 +2551,17 @@ function Btn({
     <button
       onClick={onClick}
       style={{
-        padding: "5px 10px",
+        padding: "6px 12px",
         fontSize: 9.5,
-        fontWeight: active ? 700 : 500,
-        background: active ? accent + "15" : "#fff",
-        border: `1px solid ${active ? accent : "#e3e8ee"}`,
+        fontWeight: active ? 700 : 600,
+        background: active ? accent + "18" : "rgba(255,255,255,.85)",
+        border: `1.5px solid ${active ? accent : "#e3e8ee"}`,
         color: active ? accent : "#425466",
-        borderRadius: 6,
+        borderRadius: 8,
         cursor: "pointer",
         letterSpacing: ".5px",
-        transition: "all .15s",
+        transition: "all .2s ease",
+        boxShadow: active ? `0 2px 8px ${accent}22` : "0 1px 3px rgba(0,0,0,.04)",
       }}
     >
       {label}

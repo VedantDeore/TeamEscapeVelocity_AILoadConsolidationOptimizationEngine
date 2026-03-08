@@ -119,7 +119,8 @@ export default function PackingVisualizer3D({
     const W = el.clientWidth, H = el.clientHeight;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf5f7fa);
+    scene.background = new THREE.Color(0xeef1f8);
+    scene.fog = new THREE.Fog(0xeef1f8, 25, 50);
     sceneRef.current = scene;
 
     const cam = new THREE.PerspectiveCamera(42, W / H, 0.1, 200);
@@ -164,9 +165,9 @@ export default function PackingVisualizer3D({
     // Ground + grid group (toggled by showGrid)
     const gg = new THREE.Group();
     const gndGeo = new THREE.PlaneGeometry(40, 40);
-    const gndMat = new THREE.MeshStandardMaterial({ color: 0xeaeef3, roughness: 0.92, metalness: 0 });
+    const gndMat = new THREE.MeshStandardMaterial({ color: 0xe6eaf2, roughness: 0.95, metalness: 0 });
     const gnd = new THREE.Mesh(gndGeo, gndMat); gnd.rotation.x = -Math.PI / 2; gnd.position.y = -0.005; gnd.receiveShadow = true; gg.add(gnd);
-    const grid = new THREE.GridHelper(40, 40, 0xd0d5dd, 0xe3e8ee); grid.position.y = 0.001; gg.add(grid);
+    const grid = new THREE.GridHelper(40, 40, 0xc8cdd8, 0xdce1ea); grid.position.y = 0.001; gg.add(grid);
     scene.add(gg);
     gridRef.current = gg;
 

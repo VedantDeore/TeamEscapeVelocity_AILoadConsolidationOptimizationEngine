@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   try {
@@ -81,6 +81,49 @@ export async function uploadShipmentsCSV(file: File) {
     }
     throw error;
   }
+}
+
+export async function previewCSV(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const res = await fetch(`${API_BASE}/api/shipments/preview-csv`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      let errorMessage = `Preview error: ${res.status}`;
+      try {
+        const errorData = await res.json();
+        errorMessage = errorData.error || errorData.message || errorMessage;
+      } catch {
+        errorMessage = res.statusText || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+    return res.json();
+  } catch (error: any) {
+    if (error.name === "TypeError" && error.message.includes("fetch")) {
+      throw new Error(
+        "Cannot connect to backend server. Please ensure the Flask backend is running on http://localhost:5000",
+      );
+    }
+    throw error;
+  }
+}
+
+export async function aiFixCSVRows(rows: any[]) {
+  return fetchApi<any>("/api/shipments/ai-fix", {
+    method: "POST",
+    body: JSON.stringify({ rows }),
+  });
+}
+
+export async function insertBatchShipments(rows: any[]) {
+  return fetchApi<any>("/api/shipments/insert-batch", {
+    method: "POST",
+    body: JSON.stringify({ rows }),
+  });
 }
 
 // ---- Consolidation ----
@@ -344,10 +387,17 @@ export async function getCities() {
 }
 
 export async function downloadCSVTemplate() {
-  const csvContent = `shipment_id,origin_city,dest_city,weight_kg,volume_m3,length_cm,width_cm,height_cm,priority,cargo_type,delivery_start,delivery_end,origin_lat,origin_lng,dest_lat,dest_lng
-SHP-0001,Delhi,Mumbai,1200,5.2,200,150,180,normal,general,2026-03-07T08:00:00+00:00,2026-03-08T18:00:00+00:00,28.6139,77.2090,19.0760,72.8777
-SHP-0002,Mumbai,Chennai,850,3.8,180,120,150,express,fragile,2026-03-07T09:00:00+00:00,2026-03-08T20:00:00+00:00,19.0760,72.8777,13.0827,80.2707
-SHP-0003,Bangalore,Delhi,2100,8.5,250,180,200,critical,general,2026-03-07T10:00:00+00:00,2026-03-09T18:00:00+00:00,12.9716,77.5946,28.6139,77.2090`;
+  const csvContent = `shipment_id,origin_city,origin_lat,origin_lng,dest_city,dest_lat,dest_lng,weight_kg,volume_m3,length_cm,width_cm,height_cm,delivery_start,delivery_end,priority,cargo_type
+SHP-0001,Delhi,28.6139,77.2090,Mumbai,19.0760,72.8777,1200,5.4,200,150,180,2026-03-08T08:00:00+00:00,2026-03-09T18:00:00+00:00,normal,general
+SHP-0002,Mumbai,19.0760,72.8777,Chennai,13.0827,80.2707,850,3.24,180,120,150,2026-03-08T09:00:00+00:00,2026-03-09T20:00:00+00:00,express,fragile
+SHP-0003,Bangalore,12.9716,77.5946,Delhi,28.6139,77.2090,2100,9.0,250,180,200,2026-03-08T10:00:00+00:00,2026-03-10T18:00:00+00:00,critical,general
+SHP-0004,Kolkata,22.5726,88.3639,Pune,18.5204,73.8567,450,1.44,120,100,120,2026-03-08T07:00:00+00:00,2026-03-09T15:00:00+00:00,normal,refrigerated
+SHP-0005,Hyderabad,17.3850,78.4867,Ahmedabad,23.0225,72.5714,3200,7.2,300,200,120,2026-03-08T11:00:00+00:00,2026-03-10T08:00:00+00:00,express,hazardous
+SHP-0006,Jaipur,26.9124,75.7873,Kochi,9.9312,76.2673,680,2.16,150,120,120,2026-03-08T06:00:00+00:00,2026-03-09T22:00:00+00:00,normal,general
+SHP-0007,Lucknow,26.8467,80.9462,Nagpur,21.1458,79.0882,1500,4.32,180,160,150,2026-03-08T08:30:00+00:00,2026-03-09T16:00:00+00:00,normal,fragile
+SHP-0008,Pune,18.5204,73.8567,Bangalore,12.9716,77.5946,920,1.92,160,100,120,2026-03-08T09:30:00+00:00,2026-03-09T21:00:00+00:00,express,general
+SHP-0009,Chennai,13.0827,80.2707,Kolkata,22.5726,88.3639,2800,10.8,300,180,200,2026-03-08T07:30:00+00:00,2026-03-10T12:00:00+00:00,critical,refrigerated
+SHP-0010,Ahmedabad,23.0225,72.5714,Delhi,28.6139,77.2090,550,0.96,80,80,150,2026-03-08T10:30:00+00:00,2026-03-09T18:00:00+00:00,normal,general`;
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
   const url = URL.createObjectURL(blob);

@@ -37,6 +37,9 @@ import {
   deleteShipment,
   getVehicles,
   progressShipmentStatus,
+  previewCSV,
+  aiFixCSVRows,
+  insertBatchShipments,
 } from "@/lib/api";
 
 const priorityBadge: Record<string, string> = {
@@ -89,6 +92,18 @@ export default function ShipmentsPage() {
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  // CSV Preview state
+  const [uploadStep, setUploadStep] = useState<"upload" | "preview">("upload");
+  const [previewRows, setPreviewRows] = useState<any[]>([]);
+  const [previewTotal, setPreviewTotal] = useState(0);
+  const [previewIssues, setPreviewIssues] = useState(0);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [isAiFixing, setIsAiFixing] = useState(false);
+  const [aiFixMsg, setAiFixMsg] = useState<string | null>(null);
+  const [isInserting, setIsInserting] = useState(false);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [essentialMissing, setEssentialMissing] = useState(0);
+  const previewPerPage = 10;
   const [newShipment, setNewShipment] = useState({
     origin_city: "",
     dest_city: "",
@@ -202,10 +217,138 @@ export default function ShipmentsPage() {
 
   const handleCsvUpload = async () => {
     if (!csvFile) return;
-    setIsUploading(true);
+    setIsPreviewLoading(true);
     setUploadMsg(null);
+    setAiFixMsg(null);
     try {
-      const result = await uploadShipmentsCSV(csvFile);
+      const result = await previewCSV(csvFile);
+      setPreviewRows(result.rows || []);
+      setPreviewTotal(result.total || 0);
+      setPreviewIssues(result.total_issues || 0);
+      setEssentialMissing(result.essential_missing || 0);
+      setPreviewPage(1);
+      setUploadStep("preview");
+    } catch (err: any) {
+      const msg =
+        err?.message || "Failed to parse CSV. Check the file format.";
+      showToast(msg, "error");
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
+  const handleAiFix = async () => {
+    if (!previewRows.length) return;
+    setIsAiFixing(true);
+    setAiFixMsg(null);
+    try {
+      const result = await aiFixCSVRows(previewRows);
+      setPreviewRows(result.rows || previewRows);
+      const fixedCount = result.fixed_count || 0;
+      const newIssues = (result.rows || []).reduce(
+        (sum: number, r: any) => sum + (r._issues?.length || 0),
+        0,
+      );
+      const newEssential = (result.rows || []).reduce(
+        (sum: number, r: any) => sum + (r._essential_issues?.length || 0),
+        0,
+      );
+      setPreviewIssues(newIssues);
+      setEssentialMissing(newEssential);
+      setAiFixMsg(
+        fixedCount > 0
+          ? `AI fixed ${fixedCount} values successfully!`
+          : "No fixable issues found.",
+      );
+      showToast(
+        fixedCount > 0
+          ? `AI fixed ${fixedCount} missing values`
+          : "All values look good!",
+      );
+    } catch (err: any) {
+      const msg = err?.message || "AI fix failed. You can still edit manually.";
+      showToast(msg, "error");
+      setAiFixMsg(msg);
+    } finally {
+      setIsAiFixing(false);
+    }
+  };
+
+  const handlePreviewCellEdit = (
+    rowIndex: number,
+    field: string,
+    value: string,
+  ) => {
+    setPreviewRows((prev) => {
+      const updated = [...prev];
+      const row = { ...updated[rowIndex] };
+      const numericFields = [
+        "weight_kg",
+        "volume_m3",
+        "length_cm",
+        "width_cm",
+        "height_cm",
+        "origin_lat",
+        "origin_lng",
+        "dest_lat",
+        "dest_lng",
+      ];
+      if (numericFields.includes(field)) {
+        row[field] = value ? parseFloat(value) || null : null;
+      } else {
+        row[field] = value;
+      }
+      // Recompute volume if dimensions changed
+      if (["length_cm", "width_cm", "height_cm"].includes(field)) {
+        const l = parseFloat(row.length_cm) || 0;
+        const w = parseFloat(row.width_cm) || 0;
+        const h = parseFloat(row.height_cm) || 0;
+        if (l > 0 && w > 0 && h > 0) {
+          row.volume_m3 = parseFloat(((l * w * h) / 1000000).toFixed(3));
+        }
+      }
+      // Re-validate
+      const issues: string[] = [];
+      const essentialIss: string[] = [];
+      if (!row.origin_city) { issues.push("origin_city"); essentialIss.push("origin_city"); }
+      if (!row.dest_city) { issues.push("dest_city"); essentialIss.push("dest_city"); }
+      if (!row.weight_kg || row.weight_kg <= 0) { issues.push("weight_kg"); essentialIss.push("weight_kg"); }
+      if (!row.length_cm || row.length_cm <= 0) issues.push("length_cm");
+      if (!row.width_cm || row.width_cm <= 0) issues.push("width_cm");
+      if (!row.height_cm || row.height_cm <= 0) issues.push("height_cm");
+      if (!["normal", "express", "critical"].includes(row.priority))
+        issues.push("priority");
+      if (
+        !["general", "fragile", "refrigerated", "hazardous"].includes(
+          row.cargo_type,
+        )
+      )
+        issues.push("cargo_type");
+      if (!row.delivery_start) issues.push("delivery_start");
+      if (!row.delivery_end) issues.push("delivery_end");
+      row._issues = issues;
+      row._essential_issues = essentialIss;
+      updated[rowIndex] = row;
+      // Update global counts
+      const totalIssues = updated.reduce(
+        (s, r) => s + (r._issues?.length || 0),
+        0,
+      );
+      const totalEssential = updated.reduce(
+        (s, r) => s + (r._essential_issues?.length || 0),
+        0,
+      );
+      setPreviewIssues(totalIssues);
+      setEssentialMissing(totalEssential);
+      return updated;
+    });
+  };
+
+  const handleInsertPreviewedShipments = async () => {
+    if (!previewRows.length) return;
+    setIsInserting(true);
+    try {
+      const result = await insertBatchShipments(previewRows);
       const inserted = result?.inserted ?? 0;
       const skipped = result?.skipped ?? 0;
       let message = `Successfully imported ${inserted} shipments`;
@@ -215,13 +358,13 @@ export default function ShipmentsPage() {
       showToast(message);
       setShowUploadModal(false);
       setCsvFile(null);
+      setUploadStep("upload");
+      setPreviewRows([]);
       refreshShipments();
     } catch (err: any) {
-      const msg =
-        err?.message || "Failed to upload CSV. Check the file format.";
-      showToast(msg, "error");
+      showToast(err?.message || "Failed to insert shipments.", "error");
     } finally {
-      setIsUploading(false);
+      setIsInserting(false);
     }
   };
 
@@ -840,7 +983,7 @@ export default function ShipmentsPage() {
           </div>
         </div>
 
-        {/* ── Upload CSV Modal ── */}
+        {/* ── Upload CSV Modal (Multi-Step: Upload → Preview → Insert) ── */}
         {showUploadModal && (
           <div
             style={{
@@ -853,165 +996,705 @@ export default function ShipmentsPage() {
               justifyContent: "center",
               zIndex: 50,
             }}
-            onClick={() => setShowUploadModal(false)}
+            onClick={() => {
+              setShowUploadModal(false);
+              setUploadStep("upload");
+              setCsvFile(null);
+              setPreviewRows([]);
+              setAiFixMsg(null);
+            }}
           >
             <div
               className="card animate-slide-up"
-              style={{ width: "540px", maxWidth: "90vw" }}
+              style={{
+                width: uploadStep === "preview" ? "95vw" : "540px",
+                maxWidth: uploadStep === "preview" ? "1200px" : "90vw",
+                maxHeight: "92vh",
+                overflowY: "auto",
+                transition: "width 0.3s ease",
+              }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="card-header">
                 <div>
-                  <div className="card-title">Upload Shipments CSV</div>
+                  <div className="card-title">
+                    {uploadStep === "upload"
+                      ? "Upload Shipments CSV"
+                      : "Preview & Fix Shipments"}
+                  </div>
                   <div className="card-description">
-                    Import multiple shipments at once
+                    {uploadStep === "upload"
+                      ? "Import multiple shipments at once"
+                      : `${previewTotal} rows parsed · ${previewIssues} issues found`}
                   </div>
                 </div>
-                <button
-                  className="btn btn-ghost btn-icon"
-                  onClick={() => setShowUploadModal(false)}
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="card-body">
-                <label
-                  className="upload-zone"
-                  style={{ cursor: "pointer", position: "relative" }}
-                >
-                  <input
-                    type="file"
-                    accept=".csv"
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      opacity: 0,
-                      cursor: "pointer",
-                    }}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) setCsvFile(f);
-                    }}
-                  />
-                  <div className="upload-zone-icon">
-                    <FileSpreadsheet
-                      size={26}
-                      style={{ color: "var(--lorri-primary)" }}
-                    />
-                  </div>
-                  {csvFile ? (
-                    <>
-                      <p
-                        style={{
-                          fontSize: "15px",
-                          fontWeight: 650,
-                          color: "var(--text-primary)",
-                          marginBottom: "6px",
-                        }}
-                      >
-                        {csvFile.name}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "13px",
-                          color: "var(--text-secondary)",
-                          marginBottom: "14px",
-                        }}
-                      >
-                        {(csvFile.size / 1024).toFixed(1)} KB · Click to change
-                        file
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p
-                        style={{
-                          fontSize: "15px",
-                          fontWeight: 650,
-                          color: "var(--text-primary)",
-                          marginBottom: "6px",
-                        }}
-                      >
-                        Drop your CSV file here
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "13px",
-                          color: "var(--text-secondary)",
-                          marginBottom: "14px",
-                        }}
-                      >
-                        or click to browse files
-                      </p>
-                    </>
+                <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                  {uploadStep === "preview" && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        setUploadStep("upload");
+                        setPreviewRows([]);
+                        setAiFixMsg(null);
+                        setCsvFile(null);
+                      }}
+                    >
+                      <RotateCcw size={13} /> Back
+                    </button>
                   )}
-                </label>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "center",
-                    marginTop: "14px",
-                  }}
-                >
                   <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      downloadCSVTemplate();
+                    className="btn btn-ghost btn-icon"
+                    onClick={() => {
+                      setShowUploadModal(false);
+                      setUploadStep("upload");
+                      setCsvFile(null);
+                      setPreviewRows([]);
+                      setAiFixMsg(null);
                     }}
                   >
-                    <Download size={13} /> Download Template
+                    <X size={18} />
                   </button>
                 </div>
-                <div
-                  className="alert-banner alert-info"
-                  style={{ marginTop: "14px" }}
-                >
-                  <AlertCircle size={15} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: "12px" }}>
-                    Required columns: shipment_id, origin_city, dest_city,
-                    weight_kg, volume_m3, priority, cargo_type
-                  </span>
-                </div>
               </div>
-              <div
-                className="card-footer"
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: "8px",
-                }}
-              >
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setShowUploadModal(false);
-                    setCsvFile(null);
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary"
-                  disabled={!csvFile || isUploading}
-                  onClick={handleCsvUpload}
-                >
-                  {isUploading ? (
-                    <>
+
+              {/* Step 1: Upload File */}
+              {uploadStep === "upload" && (
+                <>
+                  <div className="card-body">
+                    <label
+                      className="upload-zone"
+                      style={{ cursor: "pointer", position: "relative" }}
+                    >
+                      <input
+                        type="file"
+                        accept=".csv"
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          opacity: 0,
+                          cursor: "pointer",
+                        }}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) setCsvFile(f);
+                        }}
+                      />
+                      <div className="upload-zone-icon">
+                        <FileSpreadsheet
+                          size={26}
+                          style={{ color: "var(--lorri-primary)" }}
+                        />
+                      </div>
+                      {csvFile ? (
+                        <>
+                          <p
+                            style={{
+                              fontSize: "15px",
+                              fontWeight: 650,
+                              color: "var(--text-primary)",
+                              marginBottom: "6px",
+                            }}
+                          >
+                            {csvFile.name}
+                          </p>
+                          <p
+                            style={{
+                              fontSize: "13px",
+                              color: "var(--text-secondary)",
+                              marginBottom: "14px",
+                            }}
+                          >
+                            {(csvFile.size / 1024).toFixed(1)} KB · Click to
+                            change file
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p
+                            style={{
+                              fontSize: "15px",
+                              fontWeight: 650,
+                              color: "var(--text-primary)",
+                              marginBottom: "6px",
+                            }}
+                          >
+                            Drop your CSV file here
+                          </p>
+                          <p
+                            style={{
+                              fontSize: "13px",
+                              color: "var(--text-secondary)",
+                              marginBottom: "14px",
+                            }}
+                          >
+                            or click to browse files
+                          </p>
+                        </>
+                      )}
+                    </label>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "center",
+                        marginTop: "14px",
+                      }}
+                    >
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          downloadCSVTemplate();
+                        }}
+                      >
+                        <Download size={13} /> Download Template
+                      </button>
+                    </div>
+                    <div
+                      className="alert-banner alert-info"
+                      style={{ marginTop: "14px" }}
+                    >
+                      <AlertCircle size={15} style={{ flexShrink: 0 }} />
+                      <span style={{ fontSize: "12px" }}>
+                        Required columns: shipment_id, origin_city, dest_city,
+                        weight_kg, length_cm, width_cm, height_cm, priority,
+                        cargo_type, delivery_start, delivery_end. Coordinates
+                        are auto-fetched.
+                      </span>
+                    </div>
+                  </div>
+                  <div
+                    className="card-footer"
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: "8px",
+                    }}
+                  >
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setShowUploadModal(false);
+                        setCsvFile(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      disabled={!csvFile || isPreviewLoading}
+                      onClick={handleCsvUpload}
+                    >
+                      {isPreviewLoading ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" /> Parsing...
+                        </>
+                      ) : (
+                        <>
+                          <Upload size={14} /> Preview CSV
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Step 2: Preview Table with AI Fix & Insert */}
+              {uploadStep === "preview" && (
+                <>
+                  <div className="card-body" style={{ padding: "16px" }}>
+                    {/* Status Bar */}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "12px",
+                        marginBottom: "14px",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                      }}
+                    >
                       <div
-                        className="loading-spinner"
-                        style={{ width: "14px", height: "14px" }}
-                      />{" "}
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <Upload size={14} /> Upload
-                    </>
-                  )}
-                </button>
-              </div>
+                        style={{
+                          display: "flex",
+                          gap: "16px",
+                          flex: 1,
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: "8px 14px",
+                            background: "rgba(99,91,255,0.06)",
+                            borderRadius: "8px",
+                            border: "1px solid rgba(99,91,255,0.15)",
+                            fontSize: "13px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          <Package
+                            size={14}
+                            style={{
+                              display: "inline",
+                              verticalAlign: "middle",
+                              marginRight: "6px",
+                              color: "var(--lorri-primary)",
+                            }}
+                          />
+                          {previewTotal} rows
+                        </div>
+                        {previewIssues > 0 ? (
+                          <div
+                            style={{
+                              padding: "8px 14px",
+                              background: essentialMissing > 0 ? "rgba(223,27,65,0.08)" : "rgba(245,158,11,0.08)",
+                              borderRadius: "8px",
+                              border: essentialMissing > 0 ? "1px solid rgba(223,27,65,0.25)" : "1px solid rgba(245,158,11,0.25)",
+                              fontSize: "13px",
+                              fontWeight: 600,
+                              color: essentialMissing > 0 ? "#DF1B41" : "#D97706",
+                            }}
+                          >
+                            <AlertCircle
+                              size={14}
+                              style={{
+                                display: "inline",
+                                verticalAlign: "middle",
+                                marginRight: "6px",
+                              }}
+                            />
+                            {essentialMissing > 0
+                              ? `${essentialMissing} essential + ${previewIssues - essentialMissing} optional missing`
+                              : `${previewIssues} optional values missing`}
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              padding: "8px 14px",
+                              background: "rgba(12,175,96,0.08)",
+                              borderRadius: "8px",
+                              border: "1px solid rgba(12,175,96,0.25)",
+                              fontSize: "13px",
+                              fontWeight: 600,
+                              color: "#0CAF60",
+                            }}
+                          >
+                            <Check
+                              size={14}
+                              style={{
+                                display: "inline",
+                                verticalAlign: "middle",
+                                marginRight: "6px",
+                              }}
+                            />
+                            All values valid
+                          </div>
+                        )}
+                      </div>
+                      {previewIssues > 0 && (
+                        <button
+                          className="btn btn-sm"
+                          style={{
+                            background:
+                              "linear-gradient(135deg, #635BFF, #8B5CF6)",
+                            color: "white",
+                            border: "none",
+                            fontWeight: 700,
+                            boxShadow: "0 2px 8px rgba(99,91,255,0.3)",
+                          }}
+                          disabled={isAiFixing}
+                          onClick={handleAiFix}
+                        >
+                          {isAiFixing ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin" /> AI
+                              Fixing...
+                            </>
+                          ) : (
+                            <>
+                              <Zap size={13} /> AI Fix Missing Values
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+
+                    {aiFixMsg && (
+                      <div
+                        className="alert-banner alert-info"
+                        style={{ marginBottom: "12px" }}
+                      >
+                        <Zap size={14} style={{ flexShrink: 0, color: "#635BFF" }} />
+                        <span style={{ fontSize: "12px" }}>{aiFixMsg}</span>
+                      </div>
+                    )}
+
+                    {/* Legend */}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "16px",
+                        marginBottom: "10px",
+                        padding: "8px 12px",
+                        background: "rgba(99,91,255,0.03)",
+                        borderRadius: "6px",
+                        fontSize: "11px",
+                        color: "var(--text-secondary)",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>Legend:</span>
+                      <span><span style={{ color: "#DF1B41", fontWeight: 700 }}>*</span> = Required field</span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        <span style={{ display: "inline-block", width: "12px", height: "12px", border: "1.5px solid #DF1B41", borderRadius: "2px", background: "rgba(223,27,65,0.08)" }}></span>
+                        Essential missing (blocks insert)
+                      </span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        <span style={{ display: "inline-block", width: "12px", height: "12px", border: "1.5px solid #D97706", borderRadius: "2px", background: "rgba(245,158,11,0.08)" }}></span>
+                        Optional missing (defaults used)
+                      </span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        <span style={{ display: "inline-block", width: "12px", height: "12px", border: "1px solid #e5e7eb", borderRadius: "2px", background: "white" }}></span>
+                        Valid
+                      </span>
+                      <span style={{ marginLeft: "auto", fontStyle: "italic" }}>Click any cell to edit · Volume auto-calculates from L×W×H</span>
+                    </div>
+
+                    {/* Preview Data Table */}
+                    <div
+                      style={{
+                        overflowX: "auto",
+                        borderRadius: "8px",
+                        border: "1px solid var(--border-color, #e5e7eb)",
+                      }}
+                    >
+                      <table
+                        className="data-table"
+                        style={{ fontSize: "12px", minWidth: "1100px" }}
+                      >
+                        <thead>
+                          <tr>
+                            <th style={{ width: "30px", textAlign: "center" }}>
+                              #
+                            </th>
+                            {[
+                              { key: "shipment_id", label: "ID", required: false },
+                              { key: "origin_city", label: "Origin", required: true },
+                              { key: "dest_city", label: "Destination", required: true },
+                              { key: "weight_kg", label: "Weight (kg)", required: true },
+                              { key: "length_cm", label: "L (cm)", required: true },
+                              { key: "width_cm", label: "W (cm)", required: true },
+                              { key: "height_cm", label: "H (cm)", required: true },
+                              { key: "volume_m3", label: "Vol (m\u00B3)", required: false },
+                              { key: "priority", label: "Priority", required: true },
+                              { key: "cargo_type", label: "Cargo", required: true },
+                              { key: "delivery_start", label: "Pickup", required: true },
+                              { key: "delivery_end", label: "Delivery", required: true },
+                            ].map((col) => (
+                              <th key={col.key} style={{ whiteSpace: "nowrap" }}>
+                                {col.label}
+                                {col.required && (
+                                  <span style={{ color: "#DF1B41", marginLeft: "2px", fontSize: "11px" }}>*</span>
+                                )}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {previewRows
+                            .slice(
+                              (previewPage - 1) * previewPerPage,
+                              previewPage * previewPerPage,
+                            )
+                            .map((row, idx) => {
+                              const globalIdx =
+                                (previewPage - 1) * previewPerPage + idx;
+                              const issues: string[] = row._issues || [];
+                              return (
+                                <tr
+                                  key={globalIdx}
+                                  style={
+                                    issues.length > 0
+                                      ? {
+                                          background:
+                                            "rgba(245,158,11,0.04)",
+                                        }
+                                      : {}
+                                  }
+                                >
+                                  <td
+                                    style={{
+                                      textAlign: "center",
+                                      color: "var(--text-tertiary)",
+                                      fontWeight: 500,
+                                    }}
+                                  >
+                                    {row._row || globalIdx + 1}
+                                  </td>
+                                  {[
+                                    "shipment_id",
+                                    "origin_city",
+                                    "dest_city",
+                                    "weight_kg",
+                                    "length_cm",
+                                    "width_cm",
+                                    "height_cm",
+                                    "volume_m3",
+                                    "priority",
+                                    "cargo_type",
+                                    "delivery_start",
+                                    "delivery_end",
+                                  ].map((field) => {
+                                    const hasIssue = issues.includes(field);
+                                    const isEssential = (row._essential_issues || []).includes(field);
+                                    const val = row[field];
+                                    const isSelect =
+                                      field === "priority" ||
+                                      field === "cargo_type";
+                                    return (
+                                      <td
+                                        key={field}
+                                        style={{
+                                          padding: "2px 4px",
+                                          background: isEssential
+                                            ? "rgba(223,27,65,0.08)"
+                                            : hasIssue
+                                              ? "rgba(245,158,11,0.08)"
+                                              : "transparent",
+                                        }}
+                                      >
+                                        {isSelect ? (
+                                          <select
+                                            value={val || ""}
+                                            onChange={(e) =>
+                                              handlePreviewCellEdit(
+                                                globalIdx,
+                                                field,
+                                                e.target.value,
+                                              )
+                                            }
+                                            style={{
+                                              width: "100%",
+                                              padding: "4px 6px",
+                                              fontSize: "12px",
+                                              border: hasIssue
+                                                ? isEssential
+                                                  ? "1.5px solid #DF1B41"
+                                                  : "1.5px solid #D97706"
+                                                : "1px solid #e5e7eb",
+                                              borderRadius: "4px",
+                                              background: "white",
+                                              outline: "none",
+                                            }}
+                                          >
+                                            <option value="">--</option>
+                                            {field === "priority" ? (
+                                              <>
+                                                <option value="normal">
+                                                  normal
+                                                </option>
+                                                <option value="express">
+                                                  express
+                                                </option>
+                                                <option value="critical">
+                                                  critical
+                                                </option>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <option value="general">
+                                                  general
+                                                </option>
+                                                <option value="fragile">
+                                                  fragile
+                                                </option>
+                                                <option value="refrigerated">
+                                                  refrigerated
+                                                </option>
+                                                <option value="hazardous">
+                                                  hazardous
+                                                </option>
+                                              </>
+                                            )}
+                                          </select>
+                                        ) : (
+                                          <input
+                                            type={
+                                              [
+                                                "weight_kg",
+                                                "length_cm",
+                                                "width_cm",
+                                                "height_cm",
+                                                "volume_m3",
+                                              ].includes(field)
+                                                ? "number"
+                                                : "text"
+                                            }
+                                            value={
+                                              val !== null && val !== undefined
+                                                ? val
+                                                : ""
+                                            }
+                                            onChange={(e) =>
+                                              handlePreviewCellEdit(
+                                                globalIdx,
+                                                field,
+                                                e.target.value,
+                                              )
+                                            }
+                                            placeholder={
+                                              isEssential ? "Required!" : hasIssue ? "Missing" : ""
+                                            }
+                                            style={{
+                                              width: "100%",
+                                              minWidth:
+                                                field.includes("delivery")
+                                                  ? "160px"
+                                                  : field === "shipment_id"
+                                                    ? "90px"
+                                                    : "70px",
+                                              padding: "4px 6px",
+                                              fontSize: "12px",
+                                              border: isEssential
+                                                ? "1.5px solid #DF1B41"
+                                                : hasIssue
+                                                  ? "1.5px solid #D97706"
+                                                  : "1px solid #e5e7eb",
+                                              borderRadius: "4px",
+                                              outline: "none",
+                                              background: isEssential
+                                                ? "rgba(223,27,65,0.04)"
+                                                : hasIssue
+                                                  ? "rgba(245,158,11,0.04)"
+                                                  : "white",
+                                            }}
+                                          />
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Preview Pagination */}
+                    {previewTotal > previewPerPage && (
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginTop: "12px",
+                          fontSize: "12px",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        <span>
+                          Showing{" "}
+                          {(previewPage - 1) * previewPerPage + 1}–
+                          {Math.min(
+                            previewPage * previewPerPage,
+                            previewTotal,
+                          )}{" "}
+                          of {previewTotal}
+                        </span>
+                        <div style={{ display: "flex", gap: "4px" }}>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            disabled={previewPage === 1}
+                            onClick={() =>
+                              setPreviewPage((p) => Math.max(1, p - 1))
+                            }
+                          >
+                            Prev
+                          </button>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            disabled={
+                              previewPage >=
+                              Math.ceil(previewTotal / previewPerPage)
+                            }
+                            onClick={() => setPreviewPage((p) => p + 1)}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    className="card-footer"
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                      {essentialMissing > 0 ? (
+                        <span style={{ color: "#DF1B41" }}>
+                          <AlertCircle
+                            size={12}
+                            style={{
+                              display: "inline",
+                              verticalAlign: "middle",
+                              marginRight: "4px",
+                            }}
+                          />
+                          {essentialMissing} essential fields missing (origin, destination, weight) — fix before inserting
+                        </span>
+                      ) : previewIssues > 0 ? (
+                        <span style={{ color: "#D97706" }}>
+                          <AlertCircle
+                            size={12}
+                            style={{
+                              display: "inline",
+                              verticalAlign: "middle",
+                              marginRight: "4px",
+                            }}
+                          />
+                          {previewIssues} optional values missing — defaults will be used. You can still insert.
+                        </span>
+                      ) : null}
+                    </div>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setShowUploadModal(false);
+                          setUploadStep("upload");
+                          setCsvFile(null);
+                          setPreviewRows([]);
+                          setAiFixMsg(null);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        disabled={isInserting || previewTotal === 0 || essentialMissing > 0}
+                        onClick={handleInsertPreviewedShipments}
+                        title={essentialMissing > 0 ? "Fix essential fields (origin, destination, weight) before inserting" : ""}
+                      >
+                        {isInserting ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />{" "}
+                            Inserting...
+                          </>
+                        ) : (
+                          <>
+                            <Check size={14} /> Insert {previewTotal} Shipments
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
