@@ -47,7 +47,7 @@ const navSections = [
         href: "/consolidate",
         icon: Layers,
         label: "Consolidation",
-        badge: "7",
+        badge: null,
         badgeAi: false,
       },
       {

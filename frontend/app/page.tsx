@@ -37,6 +37,7 @@ import {
   mockActivityFeed,
   mockDashboardKPIs,
 } from "@/lib/mock-data";
+import RotatingTruck3D from "@/components/ui/RotatingTruck3D";
 
 const iconMap: Record<string, React.ElementType> = {
   package: Package,
@@ -194,13 +195,18 @@ export default function DashboardPage() {
     <>
       {/* ── Page Header with gradient mesh ── */}
       <div className="page-header">
-        <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">
-            Real-time logistics intelligence — {today}
-          </p>
+        <div style={{ display: "flex", alignItems: "center", gap: "20px", flex: 1, minWidth: 0 }}>
+          <div style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+            <RotatingTruck3D />
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <h1 className="page-title">Dashboard</h1>
+            <p className="page-subtitle">
+              Real-time logistics intelligence — {today}
+            </p>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
           <Link href="/shipments" style={{ flex: "1 1 auto", minWidth: "140px" }}>
             <button className="btn btn-secondary" style={{ width: "100%" }}>
               <Upload size={15} /> Upload Shipments
