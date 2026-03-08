@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   MapPin,
   Github,
+  BookOpen,
 } from "lucide-react";
 import {
   AreaChart,
@@ -207,6 +208,11 @@ export default function DashboardPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+          <Link href="/about" style={{ flex: "1 1 auto", minWidth: "130px" }}>
+            <button className="btn btn-secondary" style={{ width: "100%" }}>
+              <BookOpen size={15} /> How It Works
+            </button>
+          </Link>
           <Link href="/shipments" style={{ flex: "1 1 auto", minWidth: "140px" }}>
             <button className="btn btn-secondary" style={{ width: "100%" }}>
               <Upload size={15} /> Upload Shipments

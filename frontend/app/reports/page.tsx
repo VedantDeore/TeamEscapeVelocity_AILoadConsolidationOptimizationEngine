@@ -67,10 +67,15 @@ export default function ReportsPage() {
 
   const handleGenerate = (reportType: string) => {
     setGeneratingId(reportType);
-    const formatMap: Record<string, string> = { pdf: "pdf", csv: "csv", excel: "json" };
+    const formatMap: Record<string, string> = {
+      pdf: "pdf",
+      csv: "csv",
+      excel: "json",
+    };
     const fmt = formatMap[selectedFormat] || selectedFormat;
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
     window.open(
-      `http://localhost:5000/api/reports/${reportType}/download?format=${fmt}`,
+      `${apiBase}/api/reports/${reportType}/download?format=${fmt}`,
       "_blank",
     );
     setTimeout(() => setGeneratingId(null), 1500);
