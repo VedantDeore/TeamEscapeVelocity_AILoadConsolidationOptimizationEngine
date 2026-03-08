@@ -219,7 +219,7 @@ export default function RoutesPage() {
             tracking
           </p>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <div className="route-page-actions" style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {/* Run history selector */}
           {planGroups.length > 1 && (
             <div style={{ position: "relative" }}>
@@ -346,6 +346,7 @@ export default function RoutesPage() {
             {/* ── Run info banner ── */}
             {planGroups.length > 0 && (
               <div
+                className="route-run-banner"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -404,6 +405,7 @@ export default function RoutesPage() {
 
             {/* ── Summary Stats ── */}
             <div
+              className="route-stats-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(5, 1fr)",
@@ -497,6 +499,7 @@ export default function RoutesPage() {
 
             {/* ── Map + Sidebar ── */}
             <div
+              className="route-map-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 380px",
@@ -505,7 +508,7 @@ export default function RoutesPage() {
             >
               {/* Map */}
               <div
-                className="card"
+                className="card route-map-container"
                 style={{
                   overflow: "hidden",
                   height: "620px",
@@ -686,6 +689,7 @@ export default function RoutesPage() {
 
               {/* ── Route Details Sidebar ── */}
               <div
+                className="route-sidebar"
                 style={{
                   display: "flex",
                   flexDirection: "column",
@@ -1158,9 +1162,10 @@ export default function RoutesPage() {
 
                             {/* Route Metrics */}
                             <div
+                              className="route-metrics-grid"
                               style={{
                                 display: "grid",
-                                gridTemplateColumns: "1fr 1fr 1fr",
+                                gridTemplateColumns: "repeat(3, 1fr)",
                                 gap: "8px",
                                 marginTop: 10,
                                 paddingTop: 10,

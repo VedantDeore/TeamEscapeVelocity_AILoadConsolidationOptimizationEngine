@@ -327,14 +327,14 @@ export default function SimulatePage() {
                 </span>
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', borderTop: '1px solid #f0f3f7' }}>
-              <div style={{ height: 440 }}>
+            <div className="sim-packing-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 260px', borderTop: '1px solid #f0f3f7' }}>
+              <div className="sim-packing-viewport" style={{ height: 440 }}>
                 <PackingVisualizer3D
                   data={packingData} isAnimating={isAnimating} animationStep={animationStep}
                   onHoverItem={setHoveredItem} hoveredItem={hoveredItem}
                 />
               </div>
-              <div style={{ borderLeft: '1px solid #f0f3f7', padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div className="sim-packing-sidebar" style={{ borderLeft: '1px solid #f0f3f7', padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: '#8792a2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
                     Utilisation curve
@@ -430,7 +430,7 @@ export default function SimulatePage() {
 
         {/* ── Charts row (from real data) ── */}
         {scenarios.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div className="sim-charts-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="card animate-slide-up">
               <div className="card-header"><div className="card-title">Metric comparison</div></div>
               <div className="card-body" style={{ height: 300 }}>
@@ -489,7 +489,7 @@ export default function SimulatePage() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, borderTop: '1px solid #e3e8ee' }}>
+              <div className="sim-summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, borderTop: '1px solid #e3e8ee' }}>
                 {[
                   {
                     value: `${tripsSaved}`,

@@ -374,7 +374,7 @@ export default function DashboardPage() {
 
         {/* ── KPI Cards Grid ── */}
         <div
-          className="stagger-children"
+          className="stagger-children kpi-grid"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",

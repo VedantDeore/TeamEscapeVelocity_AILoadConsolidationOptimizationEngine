@@ -392,15 +392,16 @@ export default function CarbonPage() {
       <div className="page-body">
         {/* ── Dark Hero: CO₂ Total ── */}
         <div className="hero-dark-section animate-slide-up" style={{ marginBottom: "24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "24px" }}>
+          <div className="carbon-hero-top" style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "24px" }}>
             <div style={{
               width: "52px", height: "52px", borderRadius: "12px",
               background: "linear-gradient(135deg, #10B981, #06B6D4)",
               display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
             }}>
               <Leaf size={26} color="white" />
             </div>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.45)", fontWeight: 500 }}>
                 Total CO₂ Saved — All Consolidation Runs
               </div>
@@ -408,7 +409,7 @@ export default function CarbonPage() {
                 <AnimatedNumber value={totalSavings} /> kg
               </div>
             </div>
-            <div style={{ marginLeft: "auto", display: "flex", gap: "10px" }}>
+            <div className="carbon-hero-badges" style={{ marginLeft: "auto", display: "flex", gap: "10px" }}>
               <span className="badge badge-success">▼ {pctReduction}% reduction</span>
               <span className="badge badge-primary">
                 {runs.length} consolidation run{runs.length !== 1 ? "s" : ""}
@@ -432,7 +433,7 @@ export default function CarbonPage() {
         </div>
 
         {/* ── Equivalent Impact Cards ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px", marginBottom: "24px" }}>
+        <div className="carbon-impact-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px", marginBottom: "24px" }}>
           <div className="feature-card-green animate-slide-up">
             <TreePine size={26} style={{ marginBottom: "12px", opacity: 0.9 }} />
             <div style={{ fontSize: "36px", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1 }}>
@@ -466,7 +467,7 @@ export default function CarbonPage() {
         </div>
 
         {/* ── Charts Row: Per-Run CO₂ + Per-Truck Breakdown ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px", marginBottom: "24px" }}>
+        <div className="carbon-charts-grid" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px", marginBottom: "24px" }}>
           {/* CO₂ by Consolidation Run */}
           <div className="card animate-slide-up">
             <div className="card-header">

@@ -429,6 +429,7 @@ export default function PackingPage() {
     "items" | "container" | "report" | "weight" | "settings"
   >("items");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showMobileWarning, setShowMobileWarning] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [undoStack, setUndoStack] = useState<CargoItem[][]>([]);
   const [redoStack, setRedoStack] = useState<CargoItem[][]>([]);
@@ -862,8 +863,58 @@ export default function PackingPage() {
         background: "#f8f9fc",
       }}
     >
+      {/* ────── MOBILE FULL-SCREEN WARNING ────── */}
+      {showMobileWarning && (
+        <div className="packing-mobile-overlay">
+          <div className="packing-mobile-overlay-card">
+            <div style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(135deg, #f59e0b, #f97316)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
+              <Truck size={30} color="white" />
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: "#0a2540", marginBottom: 8, textAlign: "center" }}>
+              Best on Larger Screens
+            </h2>
+            <p style={{ fontSize: 14, color: "#697386", textAlign: "center", lineHeight: 1.6, maxWidth: 320, marginBottom: 24 }}>
+              This page uses heavy 3D graphics and interactive controls that work best on a tablet, laptop, or desktop screen.
+            </p>
+            <button
+              onClick={() => setShowMobileWarning(false)}
+              style={{
+                padding: "12px 32px",
+                borderRadius: 10,
+                border: "none",
+                background: "linear-gradient(135deg, #635BFF, #8B5CF6)",
+                color: "white",
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: "0 4px 14px rgba(99,91,255,0.35)",
+              }}
+            >
+              Continue Anyway
+            </button>
+            <button
+              onClick={() => window.history.back()}
+              style={{
+                marginTop: 12,
+                padding: "8px 24px",
+                borderRadius: 8,
+                border: "1px solid #e3e8ee",
+                background: "white",
+                color: "#697386",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ────── HEADER ────── */}
       <div
+        className="packing-header"
         style={{
           display: "flex",
           alignItems: "center",
@@ -876,7 +927,7 @@ export default function PackingPage() {
           boxShadow: "0 1px 8px rgba(99,91,255,.06)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div className="packing-header-title" style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div
             style={{
               background: "linear-gradient(135deg,#635BFF,#10b981)",
@@ -918,7 +969,7 @@ export default function PackingPage() {
         </div>
 
         {/* Vehicle dropdown */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="packing-header-vehicle" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Truck size={16} style={{ color: "#635BFF", flexShrink: 0 }} />
           <select
             value={selectedVehicleIdx}
@@ -951,7 +1002,7 @@ export default function PackingPage() {
             })}
           </select>
           {vehicle.name !== "No Vehicle" && (
-            <div style={{
+            <div className="packing-vehicle-dims" style={{
               fontSize: 10,
               color: "#8792a2",
               lineHeight: 1.3,
@@ -963,7 +1014,7 @@ export default function PackingPage() {
         </div>
 
         {/* Actions */}
-        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+        <div className="packing-header-actions" style={{ display: "flex", gap: 5, alignItems: "center" }}>
           <Btn
             onClick={() => setAutoRotate((a) => !a)}
             active={autoRotate}
@@ -996,9 +1047,9 @@ export default function PackingPage() {
       </div>
 
       {/* ────── MAIN ────── */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <div className="packing-main" style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* ── 3D VIEWPORT ── */}
-        <div style={{ flex: 1, position: "relative", overflow: "hidden", background: "linear-gradient(180deg, #f0f2f8 0%, #e8ecf4 100%)" }}>
+        <div className="packing-viewport-overlays" style={{ flex: 1, position: "relative", overflow: "hidden", background: "linear-gradient(180deg, #f0f2f8 0%, #e8ecf4 100%)" }}>
           <PackingVisualizer3D
             data={packingData}
             isAnimating={isAnimating}
@@ -1314,6 +1365,7 @@ export default function PackingPage() {
 
           {/* Controls hint */}
           <div
+            className="packing-controls-hint"
             style={{
               position: "absolute",
               bottom: 14,
@@ -1343,6 +1395,7 @@ export default function PackingPage() {
 
         {/* ── SIDEBAR ── */}
         <div
+          className="packing-sidebar"
           style={{
             width: 310,
             flexShrink: 0,
@@ -2625,8 +2678,10 @@ function AddItemModal({
       onClick={onClose}
     >
       <div
+        className="packing-add-modal-content"
         style={{
           width: 400,
+          maxWidth: "94vw",
           maxHeight: "85vh",
           overflow: "auto",
           background: "#fff",
@@ -2678,6 +2733,7 @@ function AddItemModal({
             />
           </div>
           <div
+            className="packing-add-modal-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr 1fr",
