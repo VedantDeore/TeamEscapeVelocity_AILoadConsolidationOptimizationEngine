@@ -514,6 +514,16 @@ def submit_feedback(cluster_id):
             except Exception:
                 pass
 
+        # If accepted, move shipments to "in_transit" so they show in Shipments page under In Transit
+        if action == "accepted":
+            try:
+                cs = sb.table("cluster_shipments").select("shipment_id").eq("cluster_id", cluster_id).execute()
+                shipment_ids = [r["shipment_id"] for r in (cs.data or [])]
+                if shipment_ids:
+                    sb.table("shipments").update({"status": "in_transit", "status_changed_at": datetime.now(timezone.utc).isoformat()}).in_("id", shipment_ids).execute()
+            except Exception:
+                pass
+
         # Activity feed
         sb.table("activity_feed").insert({
             "type":      "consolidation",

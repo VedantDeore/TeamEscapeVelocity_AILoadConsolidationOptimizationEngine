@@ -51,38 +51,38 @@ const TABS: {
   icon: React.ElementType;
   description: string;
 }[] = [
-  {
-    id: "fleet",
-    label: "Fleet",
-    icon: Truck,
-    description: "Vehicle management",
-  },
-  {
-    id: "depots",
-    label: "Depots",
-    icon: Warehouse,
-    description: "Warehouse locations",
-  },
-  {
-    id: "costs",
-    label: "Cost Model",
-    icon: IndianRupee,
-    description: "Pricing parameters",
-  },
-  {
-    id: "emissions",
-    label: "Emissions",
-    icon: Leaf,
-    description: "Carbon factors",
-  },
-  { id: "api", label: "API Keys", icon: Key, description: "Integrations" },
-  {
-    id: "engine",
-    label: "Engine",
-    icon: SlidersHorizontal,
-    description: "Algorithm config",
-  },
-];
+    {
+      id: "fleet",
+      label: "Fleet",
+      icon: Truck,
+      description: "Vehicle management",
+    },
+    {
+      id: "depots",
+      label: "Depots",
+      icon: Warehouse,
+      description: "Warehouse locations",
+    },
+    {
+      id: "costs",
+      label: "Cost Model",
+      icon: IndianRupee,
+      description: "Pricing parameters",
+    },
+    {
+      id: "emissions",
+      label: "Emissions",
+      icon: Leaf,
+      description: "Carbon factors",
+    },
+    { id: "api", label: "API Keys", icon: Key, description: "Integrations" },
+    {
+      id: "engine",
+      label: "Engine",
+      icon: SlidersHorizontal,
+      description: "Algorithm config",
+    },
+  ];
 
 const VEHICLE_TYPE_COLORS: Record<
   string,
@@ -190,7 +190,7 @@ export default function SettingsPage() {
       .then((data) => {
         if (data?.length) setDepots(data);
       })
-      .catch(() => {});
+      .catch(() => { });
   };
 
   const handleAddVehicle = async () => {
@@ -339,12 +339,12 @@ export default function SettingsPage() {
           );
         }
       })
-      .catch(() => {});
+      .catch(() => { });
     getDepots()
       .then((data) => {
         if (data?.length) setDepots(data);
       })
-      .catch(() => {});
+      .catch(() => { });
     getCostParams()
       .then((data) => {
         if (data && data.fuel_cost_per_km !== undefined) {
@@ -1201,22 +1201,57 @@ export default function SettingsPage() {
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {[
+                    // -- LIGHT COMMERCIAL VEHICLES (LCV) < 3T --
                     {
-                      label: "Tata Ace (Light)",
+                      label: "Tata Ace Gold (Light)",
                       type: "light",
                       max_weight_kg: 750,
-                      max_volume_m3: 3.5,
+                      max_volume_m3: 4.7,
                       length_cm: 210,
-                      width_cm: 155,
-                      height_cm: 155,
+                      width_cm: 150,
+                      height_cm: 150,
                       cost_per_km: 8,
                       emission_factor: 0.035,
                     },
                     {
-                      label: "Eicher 14ft (Medium)",
+                      label: "Mahindra Bolero Pik-Up (Light)",
+                      type: "light",
+                      max_weight_kg: 1500,
+                      max_volume_m3: 7.2,
+                      length_cm: 250,
+                      width_cm: 170,
+                      height_cm: 170,
+                      cost_per_km: 10,
+                      emission_factor: 0.038,
+                    },
+                    {
+                      label: "Ashok Leyland Dost+ (Light)",
+                      type: "light",
+                      max_weight_kg: 1500,
+                      max_volume_m3: 6.8,
+                      length_cm: 250,
+                      width_cm: 165,
+                      height_cm: 165,
+                      cost_per_km: 10,
+                      emission_factor: 0.038,
+                    },
+                    // -- INTERMEDIATE & MEDIUM COMMERCIAL VEHICLES (ICV/MCV) 3T - 10T --
+                    {
+                      label: "Tata 407 (Medium)",
+                      type: "medium",
+                      max_weight_kg: 2500,
+                      max_volume_m3: 9.7,
+                      length_cm: 300,
+                      width_cm: 180,
+                      height_cm: 180,
+                      cost_per_km: 14,
+                      emission_factor: 0.045,
+                    },
+                    {
+                      label: "Eicher Pro 2049 (Medium)",
                       type: "medium",
                       max_weight_kg: 5000,
-                      max_volume_m3: 20,
+                      max_volume_m3: 19.8,
                       length_cm: 430,
                       width_cm: 215,
                       height_cm: 215,
@@ -1224,15 +1259,71 @@ export default function SettingsPage() {
                       emission_factor: 0.048,
                     },
                     {
+                      label: "Tata LPT 1109 (Medium)",
+                      type: "medium",
+                      max_weight_kg: 7000,
+                      max_volume_m3: 24.2,
+                      length_cm: 500,
+                      width_cm: 220,
+                      height_cm: 220,
+                      cost_per_km: 22,
+                      emission_factor: 0.052,
+                    },
+                    {
+                      label: "BharatBenz 1215C (Medium)",
+                      type: "medium",
+                      max_weight_kg: 9000,
+                      max_volume_m3: 31.7,
+                      length_cm: 600,
+                      width_cm: 230,
+                      height_cm: 230,
+                      cost_per_km: 25,
+                      emission_factor: 0.056,
+                    },
+                    // -- HEAVY COMMERCIAL VEHICLES (HCV) & TRAILERS 10T+ --
+                    {
                       label: "Ashok Leyland 1612 (Heavy)",
                       type: "heavy",
                       max_weight_kg: 12000,
-                      max_volume_m3: 42,
+                      max_volume_m3: 41.4,
                       length_cm: 720,
                       width_cm: 240,
                       height_cm: 240,
                       cost_per_km: 28,
                       emission_factor: 0.062,
+                    },
+                    {
+                      label: "Mahindra Blazo X 28 (Heavy)",
+                      type: "heavy",
+                      max_weight_kg: 16000,
+                      max_volume_m3: 46.0,
+                      length_cm: 800,
+                      width_cm: 240,
+                      height_cm: 240,
+                      cost_per_km: 32,
+                      emission_factor: 0.065,
+                    },
+                    {
+                      label: "BharatBenz 2823 (Heavy)",
+                      type: "heavy",
+                      max_weight_kg: 18000,
+                      max_volume_m3: 54.0,
+                      length_cm: 900,
+                      width_cm: 240,
+                      height_cm: 250,
+                      cost_per_km: 35,
+                      emission_factor: 0.068,
+                    },
+                    {
+                      label: "Tata Prima 4028S (Trailer)",
+                      type: "heavy",
+                      max_weight_kg: 25000,
+                      max_volume_m3: 79.0,
+                      length_cm: 1220,
+                      width_cm: 240,
+                      height_cm: 270,
+                      cost_per_km: 45,
+                      emission_factor: 0.075,
                     },
                   ].map((preset) => (
                     <button
@@ -1380,8 +1471,8 @@ export default function SettingsPage() {
                   >
                     Auto-calculated:{" "}
                     {newVehicle.length_cm > 0 &&
-                    newVehicle.width_cm > 0 &&
-                    newVehicle.height_cm > 0
+                      newVehicle.width_cm > 0 &&
+                      newVehicle.height_cm > 0
                       ? `${((newVehicle.length_cm * newVehicle.width_cm * newVehicle.height_cm) / 1e6).toFixed(1)} m³ from dimensions`
                       : "enter dimensions below"}
                   </span>
@@ -1434,11 +1525,11 @@ export default function SettingsPage() {
                               max_volume_m3:
                                 val > 0 && p.width_cm > 0 && p.height_cm > 0
                                   ? parseFloat(
-                                      (
-                                        (val * p.width_cm * p.height_cm) /
-                                        1e6
-                                      ).toFixed(1),
-                                    )
+                                    (
+                                      (val * p.width_cm * p.height_cm) /
+                                      1e6
+                                    ).toFixed(1),
+                                  )
                                   : p.max_volume_m3,
                             }));
                           }}
@@ -1461,11 +1552,11 @@ export default function SettingsPage() {
                               max_volume_m3:
                                 p.length_cm > 0 && val > 0 && p.height_cm > 0
                                   ? parseFloat(
-                                      (
-                                        (p.length_cm * val * p.height_cm) /
-                                        1e6
-                                      ).toFixed(1),
-                                    )
+                                    (
+                                      (p.length_cm * val * p.height_cm) /
+                                      1e6
+                                    ).toFixed(1),
+                                  )
                                   : p.max_volume_m3,
                             }));
                           }}
@@ -1488,11 +1579,11 @@ export default function SettingsPage() {
                               max_volume_m3:
                                 p.length_cm > 0 && p.width_cm > 0 && val > 0
                                   ? parseFloat(
-                                      (
-                                        (p.length_cm * p.width_cm * val) /
-                                        1e6
-                                      ).toFixed(1),
-                                    )
+                                    (
+                                      (p.length_cm * p.width_cm * val) /
+                                      1e6
+                                    ).toFixed(1),
+                                  )
                                   : p.max_volume_m3,
                             }));
                           }}
@@ -1742,11 +1833,11 @@ export default function SettingsPage() {
                               max_volume_m3:
                                 val > 0 && p.width_cm > 0 && p.height_cm > 0
                                   ? parseFloat(
-                                      (
-                                        (val * p.width_cm * p.height_cm) /
-                                        1e6
-                                      ).toFixed(1),
-                                    )
+                                    (
+                                      (val * p.width_cm * p.height_cm) /
+                                      1e6
+                                    ).toFixed(1),
+                                  )
                                   : p.max_volume_m3,
                             }));
                           }}
@@ -1768,11 +1859,11 @@ export default function SettingsPage() {
                               max_volume_m3:
                                 p.length_cm > 0 && val > 0 && p.height_cm > 0
                                   ? parseFloat(
-                                      (
-                                        (p.length_cm * val * p.height_cm) /
-                                        1e6
-                                      ).toFixed(1),
-                                    )
+                                    (
+                                      (p.length_cm * val * p.height_cm) /
+                                      1e6
+                                    ).toFixed(1),
+                                  )
                                   : p.max_volume_m3,
                             }));
                           }}
@@ -1794,11 +1885,11 @@ export default function SettingsPage() {
                               max_volume_m3:
                                 p.length_cm > 0 && p.width_cm > 0 && val > 0
                                   ? parseFloat(
-                                      (
-                                        (p.length_cm * p.width_cm * val) /
-                                        1e6
-                                      ).toFixed(1),
-                                    )
+                                    (
+                                      (p.length_cm * p.width_cm * val) /
+                                      1e6
+                                    ).toFixed(1),
+                                  )
                                   : p.max_volume_m3,
                             }));
                           }}
