@@ -119,11 +119,41 @@ export async function aiFixCSVRows(rows: any[]) {
   });
 }
 
+const INSERT_BATCH_CHUNK_SIZE = 20;
+
 export async function insertBatchShipments(rows: any[]) {
-  return fetchApi<any>("/api/shipments/insert-batch", {
-    method: "POST",
-    body: JSON.stringify({ rows }),
-  });
+  if (rows.length <= INSERT_BATCH_CHUNK_SIZE) {
+    return fetchApi<any>("/api/shipments/insert-batch", {
+      method: "POST",
+      body: JSON.stringify({ rows }),
+    });
+  }
+  // Chunk to avoid proxy timeout (geocoding 100+ rows can exceed socket timeout)
+  let totalInserted = 0;
+  let totalSkipped = 0;
+  const allErrors: Array<{ row: number | string; error: string }> = [];
+  for (let i = 0; i < rows.length; i += INSERT_BATCH_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + INSERT_BATCH_CHUNK_SIZE);
+    const result = await fetchApi<any>("/api/shipments/insert-batch", {
+      method: "POST",
+      body: JSON.stringify({ rows: chunk, offset: i }),
+    });
+    totalInserted += result?.inserted ?? 0;
+    totalSkipped += result?.skipped ?? 0;
+    if (result?.parse_errors?.length) {
+      allErrors.push(
+        ...result.parse_errors.map((e: { row: number | string; error: string }) => ({
+          ...e,
+          row: typeof e.row === "number" ? e.row + i : e.row,
+        })),
+      );
+    }
+  }
+  return {
+    inserted: totalInserted,
+    skipped: totalSkipped,
+    parse_errors: allErrors,
+  };
 }
 
 // ---- Consolidation ----
@@ -313,6 +343,31 @@ export async function getReports() {
 
 export async function getVehicles() {
   return fetchApi<any[]>("/api/vehicles");
+}
+
+export async function releaseDeliveredClusters(force = false) {
+  const qs = force ? "?force=1" : "";
+  return fetchApi<{ released: number; message: string; force?: boolean }>(
+    `/api/clusters/release-delivered${qs}`,
+    { method: "POST" }
+  );
+}
+
+export async function getVehicleAvailability() {
+  return fetchApi<{
+    vehicles: Array<{
+      id: string;
+      name: string;
+      type: string;
+      max_weight_kg: number;
+      status: "available" | "busy";
+      busy_since?: string | null;
+      busy_until?: string | null;
+      plan_name?: string | null;
+    }>;
+    available_count: number;
+    busy_count: number;
+  }>("/api/vehicles/availability");
 }
 
 export async function createVehicle(data: any) {

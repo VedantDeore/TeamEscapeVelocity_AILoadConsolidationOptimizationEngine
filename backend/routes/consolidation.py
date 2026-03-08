@@ -144,6 +144,13 @@ def run_consolidation():
     body = request.get_json(silent=True) or {}
     constraints = body.get("constraints", {})
 
+    # --- 0. Release delivered clusters so trucks become available ---
+    try:
+        from utils.cluster_sync import mark_completed_clusters_as_delivered
+        mark_completed_clusters_as_delivered(sb)
+    except Exception:
+        pass
+
     # --- 1. Fetch pending shipments ---
     shipments = _get_pending_shipments(sb, constraints)
     if not shipments:
