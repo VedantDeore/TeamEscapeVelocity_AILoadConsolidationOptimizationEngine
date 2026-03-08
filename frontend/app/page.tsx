@@ -39,6 +39,7 @@ import {
   mockDashboardKPIs,
 } from "@/lib/mock-data";
 import RotatingTruck3D from "@/components/ui/RotatingTruck3D";
+import LogoTicker from "@/components/ui/LogoTicker";
 
 const iconMap: Record<string, React.ElementType> = {
   package: Package,
@@ -367,6 +368,9 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* ── Powered By Logo Ticker ── */}
+        <LogoTicker />
 
         {/* ── KPI Cards Grid ── */}
         <div
