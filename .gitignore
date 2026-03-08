@@ -89,3 +89,5 @@ CORRIDOR_IMPLEMENTATION.md
 DYNAMIC_ROUTING_IMPLEMENTATION.md
 frontend/.env.example
 backend/.env.example
+backend/shipments_presentation.csv
+backend/generate_csv.py
