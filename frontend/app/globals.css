@@ -4137,3 +4137,73 @@ select.input,
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ══════════════════════════════════════════════════════════
+   Logo Ticker — "Powered By" scrolling marquee
+   ══════════════════════════════════════════════════════════ */
+
+.ltk-root {
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+.ltk-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--text-tertiary, #8792a2);
+  margin: 0 0 16px;
+}
+
+/* Fixed-height box that clips the absolutely-positioned track */
+.ltk-viewport {
+  position: relative;
+  height: 40px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(
+    to right, transparent 0%, black 8%, black 92%, transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right, transparent 0%, black 8%, black 92%, transparent 100%
+  );
+}
+
+/* The scrolling strip — absolutely positioned so it CANNOT affect
+   parent width. Contains two copies of the logos for seamless loop.
+   width:max-content sizes to children but absolute keeps it out of flow. */
+.ltk-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  width: max-content;
+  height: 100%;
+  animation: ltk-slide 35s linear infinite;
+  will-change: transform;
+}
+
+.ltk-track:hover {
+  animation-play-state: paused;
+}
+
+.ltk-logo {
+  flex: 0 0 auto;
+  height: 24px;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
+  margin: 0 30px;
+  opacity: 0.65;
+  transition: opacity 0.3s ease;
+}
+
+.ltk-logo:hover {
+  opacity: 1;
+}
+
+@keyframes ltk-slide {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
