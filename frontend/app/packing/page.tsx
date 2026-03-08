@@ -29,6 +29,7 @@ import {
   Grid3X3,
   Ruler,
   Settings,
+  Truck,
 } from "lucide-react";
 import {
   getShipments,
@@ -916,97 +917,49 @@ export default function PackingPage() {
           </div>
         </div>
 
-        {/* Truck pills */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", alignItems: "center" }}>
-          {vehicles.map((v, i) => {
-            const isActive = selectedVehicleIdx === i;
-            const volM3 = ((v.lengthCm * v.widthCm * v.heightCm) / 1e6).toFixed(1);
-            const iconColor = isActive ? "#fff" : "#635BFF";
-            return (
-              <button
-                key={v.id}
-                onClick={() => setSelectedVehicleIdx(i)}
-                style={{
-                  padding: "0",
-                  borderRadius: 12,
-                  border: isActive ? "2px solid #635BFF" : "1.5px solid #e3e8ee",
-                  cursor: "pointer",
-                  transition: "all .25s ease",
-                  background: isActive
-                    ? "linear-gradient(135deg, #635BFF 0%, #4f46e5 100%)"
-                    : "rgba(255,255,255,.92)",
-                  boxShadow: isActive
-                    ? "0 4px 16px rgba(99,91,255,.35), 0 0 0 3px rgba(99,91,255,.1)"
-                    : "0 1px 4px rgba(0,0,0,.05)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 0,
-                  overflow: "hidden",
-                  minWidth: 120,
-                }}
-              >
-                {/* Vehicle SVG icon area */}
-                <div style={{
-                  width: 38,
-                  height: 46,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: isActive ? "rgba(255,255,255,.15)" : "rgba(99,91,255,.06)",
-                  flexShrink: 0,
-                }}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="1" y="6" width="14" height="10" rx="1.5" stroke={iconColor} strokeWidth="1.6" fill={isActive ? "rgba(255,255,255,.12)" : "rgba(99,91,255,.08)"} />
-                    <path d="M15 10H19.2C19.6 10 19.95 10.25 20.1 10.6L21.5 14H15V10Z" stroke={iconColor} strokeWidth="1.5" fill={isActive ? "rgba(255,255,255,.08)" : "rgba(99,91,255,.05)"} strokeLinejoin="round" />
-                    <line x1="15" y1="14" x2="15" y2="16" stroke={iconColor} strokeWidth="1.5" />
-                    <line x1="21.5" y1="14" x2="21.5" y2="16" stroke={iconColor} strokeWidth="1.2" />
-                    <rect x="15" y="14" width="7" height="2" rx="0.5" stroke={iconColor} strokeWidth="1.2" fill={isActive ? "rgba(255,255,255,.08)" : "rgba(99,91,255,.04)"} />
-                    <circle cx="6" cy="17.5" r="2" stroke={iconColor} strokeWidth="1.5" fill={isActive ? "rgba(255,255,255,.2)" : "rgba(99,91,255,.1)"} />
-                    <circle cx="6" cy="17.5" r="0.7" fill={iconColor} />
-                    <circle cx="19" cy="17.5" r="2" stroke={iconColor} strokeWidth="1.5" fill={isActive ? "rgba(255,255,255,.2)" : "rgba(99,91,255,.1)"} />
-                    <circle cx="19" cy="17.5" r="0.7" fill={iconColor} />
-                  </svg>
-                </div>
-                {/* Vehicle info */}
-                <div style={{
-                  padding: "5px 10px 5px 6px",
-                  textAlign: "left",
-                  lineHeight: 1.25,
-                }}>
-                  <div style={{
-                    fontSize: 10.5,
-                    fontWeight: 700,
-                    color: isActive ? "#fff" : "#0a2540",
-                    letterSpacing: ".3px",
-                    whiteSpace: "nowrap",
-                  }}>
-                    {v.name}
-                  </div>
-                  <div style={{
-                    fontSize: 8,
-                    fontWeight: 500,
-                    color: isActive ? "rgba(255,255,255,.7)" : "#8792a2",
-                    marginTop: 1,
-                    whiteSpace: "nowrap",
-                  }}>
-                    {volM3}m³ · {(v.maxWeightKg / 1000).toFixed(1)}t
-                  </div>
-                </div>
-                {/* Active indicator dot */}
-                {isActive && (
-                  <div style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: "#4ade80",
-                    marginRight: 8,
-                    flexShrink: 0,
-                    boxShadow: "0 0 6px rgba(74,222,128,.6)",
-                  }} />
-                )}
-              </button>
-            );
-          })}
+        {/* Vehicle dropdown */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Truck size={16} style={{ color: "#635BFF", flexShrink: 0 }} />
+          <select
+            value={selectedVehicleIdx}
+            onChange={(e) => setSelectedVehicleIdx(Number(e.target.value))}
+            style={{
+              padding: "7px 32px 7px 12px",
+              borderRadius: 10,
+              border: "1.5px solid rgba(99,91,255,.25)",
+              background: "rgba(255,255,255,.95)",
+              fontSize: 12,
+              fontWeight: 600,
+              color: "#0a2540",
+              cursor: "pointer",
+              minWidth: 200,
+              appearance: "none",
+              WebkitAppearance: "none",
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23635BFF' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 10px center",
+              boxShadow: "0 2px 8px rgba(99,91,255,.1)",
+            }}
+          >
+            {vehicles.map((v, i) => {
+              const volM3 = ((v.lengthCm * v.widthCm * v.heightCm) / 1e6).toFixed(1);
+              return (
+                <option key={v.id} value={i}>
+                  {v.name} — {volM3}m³ · {(v.maxWeightKg / 1000).toFixed(1)}t
+                </option>
+              );
+            })}
+          </select>
+          {vehicle.name !== "No Vehicle" && (
+            <div style={{
+              fontSize: 10,
+              color: "#8792a2",
+              lineHeight: 1.3,
+              whiteSpace: "nowrap",
+            }}>
+              <span style={{ color: "#0a2540", fontWeight: 600 }}>{vehicle.lengthCm}×{vehicle.widthCm}×{vehicle.heightCm}</span> cm
+            </div>
+          )}
         </div>
 
         {/* Actions */}
