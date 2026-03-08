@@ -80,14 +80,16 @@ yarn-error.log*
 
 # PEM keys
 *.pem
+
+# Internal docs
 implementation_plan.md.resolved
 implementation_plan.md
 CORRIDOR_IMPLEMENTATION.md
 DYNAMIC_ROUTING_IMPLEMENTATION.md
-CORRIDOR_IMPLEMENTATION.md
-CORRIDOR_IMPLEMENTATION.md
-DYNAMIC_ROUTING_IMPLEMENTATION.md
-frontend/.env.example
-backend/.env.example
+
+# Temporary scripts / data
 backend/shipments_presentation.csv
 backend/generate_csv.py
+backend/test_*.py
+backend/.env.example
+frontend/.env.example
