@@ -105,7 +105,7 @@ export async function previewCSV(file: File) {
   } catch (error: any) {
     if (error.name === "TypeError" && error.message.includes("fetch")) {
       throw new Error(
-        "Cannot connect to backend server. Please ensure the Flask backend is running on http://localhost:5000",
+        `Cannot connect to backend server at ${API_BASE || "/api"}. Please ensure the backend is running.`,
       );
     }
     throw error;
