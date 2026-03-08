@@ -21,9 +21,7 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   } catch (error: any) {
     // Handle network errors (backend not running, CORS, etc.)
     if (error.name === "TypeError" && error.message.includes("fetch")) {
-      throw new Error(
-        "Cannot connect to backend server. Please ensure the Flask backend is running on http://localhost:5000",
-      );
+      throw new Error(`Cannot connect to backend server at ${API_BASE}`);
     }
     throw error;
   }
@@ -79,9 +77,7 @@ export async function uploadShipmentsCSV(file: File) {
     return res.json();
   } catch (error: any) {
     if (error.name === "TypeError" && error.message.includes("fetch")) {
-      throw new Error(
-        "Cannot connect to backend server. Please ensure the Flask backend is running on http://localhost:5000",
-      );
+      throw new Error(`Cannot connect to backend server at ${API_BASE}`);
     }
     throw error;
   }

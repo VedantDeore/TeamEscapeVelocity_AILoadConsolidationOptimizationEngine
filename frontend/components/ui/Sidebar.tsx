@@ -17,6 +17,7 @@ import {
   Truck,
   Menu,
   X,
+  BookOpen,
 } from "lucide-react";
 import { getShipments } from "@/lib/api";
 
@@ -28,6 +29,13 @@ const navSections = [
         href: "/",
         icon: LayoutDashboard,
         label: "Dashboard",
+        badge: null,
+        badgeAi: false,
+      },
+      {
+        href: "/about",
+        icon: BookOpen,
+        label: "How It Works",
         badge: null,
         badgeAi: false,
       },
