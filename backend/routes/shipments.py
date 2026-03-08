@@ -152,10 +152,11 @@ def progress_status():
     Auto-advance shipment statuses based on time since status_changed_at:
       consolidated  → in_transit   after 1 hour
       in_transit    → delivered    after 2 hours (i.e. 1 hour after in_transit)
+    When all shipments in a cluster are delivered, mark cluster as delivered.
     """
     sb = get_supabase()
     now = datetime.now(timezone.utc)
-    updated = {"to_in_transit": 0, "to_delivered": 0}
+    updated = {"to_in_transit": 0, "to_delivered": 0, "clusters_delivered": 0}
 
     try:
         # Fetch consolidated shipments
@@ -193,6 +194,11 @@ def progress_status():
                     updated["to_delivered"] += 1
             except Exception:
                 pass
+
+        # Mark clusters as delivered when all their shipments are delivered
+        from utils.cluster_sync import mark_completed_clusters_as_delivered
+        marked = mark_completed_clusters_as_delivered(sb)
+        updated["clusters_delivered"] = marked
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -643,6 +649,7 @@ def insert_batch():
         return jsonify({"error": "No rows provided"}), 400
 
     rows = data["rows"]
+    offset = data.get("offset", 0)  # For chunked inserts, preserve UPLOAD-N numbering
 
     def _safe_float(val, default=0.0):
         try:
@@ -650,21 +657,32 @@ def insert_batch():
         except (ValueError, TypeError):
             return default
 
+    # Cache city coords to avoid repeated geocoding (major perf gain for batch inserts)
+    city_coord_cache = {}
+
     def _get_city_coords(city_name):
         if not city_name:
             return None, None
+        key = city_name.strip().lower()
+        if key in city_coord_cache:
+            return city_coord_cache[key]
         try:
             result = sb.table("cities").select("lat, lng").ilike("name", f"%{city_name.strip()}%").limit(1).execute()
             if result.data:
-                return result.data[0].get("lat"), result.data[0].get("lng")
+                lat, lng = result.data[0].get("lat"), result.data[0].get("lng")
+                city_coord_cache[key] = (lat, lng)
+                return lat, lng
         except Exception:
             pass
         try:
             geo_result = geocode(f"{city_name.strip()}, India")
             if geo_result:
-                return geo_result.get("lat"), geo_result.get("lng")
+                lat, lng = geo_result.get("lat"), geo_result.get("lng")
+                city_coord_cache[key] = (lat, lng)
+                return lat, lng
         except Exception:
             pass
+        city_coord_cache[key] = (None, None)
         return None, None
 
     # Gather existing shipment codes
@@ -704,7 +722,7 @@ def insert_batch():
             # Generate unique shipment code
             base_code = (row.get("shipment_id") or "").strip()
             if not base_code:
-                base_code = f"UPLOAD-{i+1}"
+                base_code = f"UPLOAD-{offset + i + 1}"
             code = base_code
             if code in existing_codes:
                 code = f"{base_code}-{str(uuid.uuid4())[:8].upper()}"

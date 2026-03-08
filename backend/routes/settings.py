@@ -43,6 +43,106 @@ def delete_vehicle(vehicle_id):
         return jsonify({"error": str(e)}), 500
 
 
+def _sync_clusters_delivered(sb, force=False):
+    """Mark clusters as delivered when all their shipments are delivered."""
+    from utils.cluster_sync import mark_completed_clusters_as_delivered
+    return mark_completed_clusters_as_delivered(sb, force=force)
+
+
+@settings_bp.route("/api/clusters/release-delivered", methods=["POST"])
+def release_delivered_clusters():
+    """
+    Manually release trucks: mark clusters as delivered when all their
+    shipments are delivered. Returns count of clusters released.
+    Query param ?force=1 to force-release all busy clusters (no shipment check).
+    """
+    sb = get_supabase()
+    force = request.args.get("force") in ("1", "true", "yes")
+    try:
+        from utils.cluster_sync import mark_completed_clusters_as_delivered
+        marked = mark_completed_clusters_as_delivered(sb, force=force)
+        return jsonify({
+            "released": marked,
+            "message": f"{marked} cluster(s) marked as delivered — trucks now available.",
+            "force": force,
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@settings_bp.route("/api/vehicles/availability", methods=["GET"])
+def vehicle_availability():
+    """
+    Return which trucks are available vs busy (assigned to accepted/in_transit clusters).
+    Includes date range (busy_since, busy_until) for busy trucks.
+    """
+    from datetime import datetime
+    sb = get_supabase()
+
+    # Catch up: mark clusters as delivered when all shipments are delivered
+    _sync_clusters_delivered(sb)
+
+    vehicles = sb.table("vehicles").select("id, name, type, max_weight_kg, is_available").eq(
+        "is_available", True
+    ).execute()
+    v_list = vehicles.data or []
+
+    busy_clusters = sb.table("clusters").select(
+        "id, vehicle_id, vehicle_name, status, plan_id"
+    ).in_("status", ["accepted", "in_transit"]).execute()
+    busy_data = busy_clusters.data or []
+
+    plan_ids = list({c["plan_id"] for c in busy_data if c.get("plan_id")})
+    plans = {}
+    if plan_ids:
+        plans_res = sb.table("consolidation_plans").select("id, name, created_at").in_(
+            "id", plan_ids
+        ).execute()
+        for p in (plans_res.data or []):
+            plans[p["id"]] = p
+
+    busy_by_vehicle = {}
+    for c in busy_data:
+        vid = c.get("vehicle_id")
+        if not vid:
+            continue
+        plan = plans.get(c.get("plan_id") or "") or {}
+        created = plan.get("created_at") or ""
+        try:
+            dt = datetime.fromisoformat(created.replace("Z", "+00:00")) if created else None
+            busy_since = dt.strftime("%Y-%m-%d %H:%M") if dt else "—"
+        except Exception:
+            busy_since = created or "—"
+        busy_by_vehicle[vid] = {
+            "cluster_id": c.get("id"),
+            "cluster_status": c.get("status"),
+            "vehicle_name": c.get("vehicle_name"),
+            "plan_name": plan.get("name", ""),
+            "busy_since": busy_since,
+            "busy_until": "In progress",
+        }
+
+    result = []
+    for v in v_list:
+        vid = v.get("id")
+        busy = busy_by_vehicle.get(vid)
+        result.append({
+            "id": vid,
+            "name": v.get("name", ""),
+            "type": v.get("type", ""),
+            "max_weight_kg": v.get("max_weight_kg", 0),
+            "status": "busy" if busy else "available",
+            "busy_since": busy.get("busy_since") if busy else None,
+            "busy_until": busy.get("busy_until") if busy else None,
+            "plan_name": busy.get("plan_name") if busy else None,
+        })
+    return jsonify({
+        "vehicles": result,
+        "available_count": sum(1 for r in result if r["status"] == "available"),
+        "busy_count": sum(1 for r in result if r["status"] == "busy"),
+    })
+
+
 # ---- Depots ----
 
 @settings_bp.route("/api/depots", methods=["GET"])

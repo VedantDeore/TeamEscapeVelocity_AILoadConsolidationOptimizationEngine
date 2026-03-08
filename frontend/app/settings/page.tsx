@@ -35,6 +35,8 @@ import {
   deleteDepot,
   geocodeAddress,
   updateVehicle,
+  getVehicleAvailability,
+  releaseDeliveredClusters,
 } from "@/lib/api";
 
 type SettingsTab =
@@ -135,6 +137,12 @@ export default function SettingsPage() {
     lng: 0,
   });
   const [savingDepot, setSavingDepot] = useState(false);
+  const [releasingClusters, setReleasingClusters] = useState(false);
+  const [vehicleAvailability, setVehicleAvailability] = useState<{
+    vehicles: Array<{ id: string; name: string; status: string; busy_since?: string | null; busy_until?: string | null; plan_name?: string | null }>;
+    available_count: number;
+    busy_count: number;
+  } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [showEditVehicle, setShowEditVehicle] = useState(false);
@@ -193,6 +201,12 @@ export default function SettingsPage() {
       .catch(() => { });
   };
 
+  const refreshVehicleAvailability = () => {
+    getVehicleAvailability()
+      .then((data) => setVehicleAvailability(data))
+      .catch(() => setVehicleAvailability(null));
+  };
+
   const handleAddVehicle = async () => {
     if (!newVehicle.name) return;
     setAddingVehicle(true);
@@ -200,6 +214,7 @@ export default function SettingsPage() {
       await createVehicle(newVehicle);
       showToastMsg("Vehicle added successfully!");
       setShowAddVehicle(false);
+      refreshVehicleAvailability();
       setNewVehicle({
         name: "",
         type: "heavy",
@@ -244,6 +259,7 @@ export default function SettingsPage() {
       showToastMsg("Vehicle updated successfully!");
       setShowEditVehicle(false);
       refreshVehicles();
+      refreshVehicleAvailability();
     } catch {
       showToastMsg("Failed to update vehicle.");
     } finally {
@@ -317,6 +333,10 @@ export default function SettingsPage() {
       setSavingDepot(false);
     }
   };
+
+  useEffect(() => {
+    if (activeTab === "fleet") refreshVehicleAvailability();
+  }, [activeTab]);
 
   useEffect(() => {
     getVehicles()
@@ -516,6 +536,135 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
+                {/* Truck Availability — dynamic available vs busy */}
+                {vehicleAvailability && (
+                  <div
+                    className="stg-card"
+                    style={{
+                      marginBottom: 20,
+                      background: "linear-gradient(135deg, rgba(14,165,233,0.03) 0%, rgba(6,182,212,0.05) 100%)",
+                      border: "1px solid rgba(14,165,233,0.12)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: 16,
+                      }}
+                    >
+                      <div>
+                        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+                          Truck availability
+                        </h4>
+                        <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-secondary)" }}>
+                          Available for consolidation vs busy on routes (with dates)
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981" }} />
+                          <strong>{vehicleAvailability.available_count}</strong> available
+                        </span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#f59e0b" }} />
+                          <strong>{vehicleAvailability.busy_count}</strong> busy
+                        </span>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ fontSize: 12, padding: "6px 12px" }}
+                          disabled={releasingClusters || vehicleAvailability.busy_count === 0}
+                          onClick={async () => {
+                            setReleasingClusters(true);
+                            try {
+                              const r = await releaseDeliveredClusters(false);
+                              showToastMsg(r?.message || `${r?.released ?? 0} trucks released`);
+                              refreshVehicleAvailability();
+                            } catch (e: any) {
+                              showToastMsg(e?.message || "Failed to release clusters");
+                            } finally {
+                              setReleasingClusters(false);
+                            }
+                          }}
+                        >
+                          {releasingClusters ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                              <div className="loading-spinner" style={{ width: 12, height: 12 }} />
+                              Releasing...
+                            </span>
+                          ) : (
+                            "Release delivered clusters"
+                          )}
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ fontSize: 11, padding: "6px 10px", opacity: 0.9 }}
+                          disabled={releasingClusters || vehicleAvailability.busy_count === 0}
+                          title="Mark all busy clusters as delivered without checking shipment status (use when you know all shipments are done)"
+                          onClick={async () => {
+                            if (!confirm("Force release all busy trucks? This marks all busy clusters as delivered without checking shipment status. Use only when you know all shipments are done.")) return;
+                            setReleasingClusters(true);
+                            try {
+                              const r = await releaseDeliveredClusters(true);
+                              showToastMsg(r?.message || `${r?.released ?? 0} trucks released`);
+                              refreshVehicleAvailability();
+                            } catch (e: any) {
+                              showToastMsg(e?.message || "Failed to force-release clusters");
+                            } finally {
+                              setReleasingClusters(false);
+                            }
+                          }}
+                        >
+                          Force release all
+                        </button>
+                      </div>
+                    </div>
+                    {vehicleAvailability.busy_count > 0 && (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(14,165,233,0.1)" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#0ea5e9", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+                          Busy trucks (from → until)
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                          {vehicleAvailability.vehicles
+                            .filter((v) => v.status === "busy")
+                            .map((v) => (
+                              <div
+                                key={v.id}
+                                style={{
+                                  padding: "8px 12px",
+                                  background: "rgba(245,158,11,0.08)",
+                                  borderRadius: "var(--radius-md)",
+                                  border: "1px solid rgba(245,158,11,0.15)",
+                                  fontSize: 12,
+                                }}
+                              >
+                                <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{v.name}</div>
+                                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+                                  From: {v.busy_since || "—"} → {v.busy_until || "In progress"}
+                                </div>
+                                {v.plan_name && (
+                                  <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginTop: 2 }}>
+                                    Plan: {v.plan_name}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                        </div>
+                        <p style={{ margin: "10px 0 0", fontSize: 11, color: "var(--text-tertiary)" }}>
+                          Add more trucks if availability is low during peak consolidation runs.
+                        </p>
+                      </div>
+                    )}
+                    {vehicleAvailability.available_count > 0 && vehicleAvailability.busy_count === 0 && (
+                      <p style={{ margin: "12px 0 0", fontSize: 12, color: "var(--text-secondary)" }}>
+                        All trucks are available for consolidation.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Fleet table */}
                 <div className="stg-card">
                   <div className="stg-card-header">
@@ -713,6 +862,7 @@ export default function SettingsPage() {
                                           });
                                           showToastMsg("Vehicle restored");
                                           refreshVehicles();
+                                          refreshVehicleAvailability();
                                         } catch {
                                           showToastMsg(
                                             "Failed to restore vehicle",
