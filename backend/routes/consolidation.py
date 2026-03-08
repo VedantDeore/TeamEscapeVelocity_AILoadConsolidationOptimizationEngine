@@ -195,9 +195,20 @@ def run_consolidation():
     co2_before_estimate = trips_before * 18.0  # rough kg CO₂ per solo trip
 
     # --- 2. DBSCAN clustering with available vehicles ---
-    clusters = cluster_shipments(shipments, constraints, available_vehicles)
+    clustering_result = cluster_shipments(shipments, constraints, available_vehicles)
+    clusters = clustering_result["clusters"]
+    rejected_ids = clustering_result.get("rejected_shipment_ids", [])
+    overflow_ids = clustering_result.get("overflow_shipment_ids", [])
+    clustering_warnings = clustering_result.get("warnings", [])
 
     if not clusters:
+        if rejected_ids or overflow_ids:
+            return jsonify({
+                "error": "No shipments could be assigned to available vehicles.",
+                "rejected_shipment_ids": rejected_ids,
+                "overflow_shipment_ids": overflow_ids,
+                "warnings": clustering_warnings,
+            }), 400
         return jsonify({"error": "Clustering produced no groups"}), 500
 
     # --- 3. Prepare carbon inputs ---
@@ -397,6 +408,9 @@ def run_consolidation():
         "green_score":       emission_data["green_score"],
         "clusters":          cluster_results,
         "overweight_warnings": overweight_warnings,
+        "vehicle_limit_warnings": clustering_warnings,
+        "rejected_shipment_ids": rejected_ids,
+        "overflow_shipment_ids": overflow_ids,
     }), 201
 
 
