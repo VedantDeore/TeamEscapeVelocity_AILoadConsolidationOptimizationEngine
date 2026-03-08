@@ -2035,7 +2035,7 @@ export default function ConsolidationPage() {
           onClick={() => setEditingCluster(null)}
         >
           <div
-            className="card animate-slide-up"
+            className="card animate-slide-up consolidation-modal-content"
             style={{
               width: "600px",
               maxWidth: "94vw",

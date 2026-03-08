@@ -717,6 +717,7 @@ export default function ShipmentsPage() {
 
         {/* ── Filters Bar ── */}
         <div
+          className="shipment-filters-bar"
           style={{
             display: "flex",
             gap: "10px",
@@ -777,7 +778,7 @@ export default function ShipmentsPage() {
             <option value="delivered">Delivered</option>
           </select>
           {selectedIds.size > 0 && (
-            <div style={{ display: "flex", gap: "8px", marginLeft: "auto" }}>
+            <div className="shipment-bulk-bar" style={{ display: "flex", gap: "8px", marginLeft: "auto" }}>
               <span className="badge badge-primary">
                 {selectedIds.size} selected
               </span>
@@ -1005,7 +1006,7 @@ export default function ShipmentsPage() {
             }}
           >
             <div
-              className="card animate-slide-up"
+              className="card animate-slide-up shipment-modal-content"
               style={{
                 width: uploadStep === "preview" ? "95vw" : "540px",
                 maxWidth: uploadStep === "preview" ? "1200px" : "90vw",
@@ -1715,7 +1716,7 @@ export default function ShipmentsPage() {
             onClick={() => setShowAddModal(false)}
           >
             <div
-              className="card animate-slide-up"
+              className="card animate-slide-up shipment-modal-content"
               style={{
                 width: "760px",
                 maxWidth: "94vw",
@@ -1802,6 +1803,7 @@ export default function ShipmentsPage() {
                 })()}
 
                 <div
+                  className="shipment-modal-form-grid"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 1fr",

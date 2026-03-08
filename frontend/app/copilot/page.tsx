@@ -324,6 +324,7 @@ function ConsolidationPreview({
 
       {/* Summary KPIs */}
       <div
+        className="copilot-preview-kpi-grid"
         style={{
           padding: "10px 14px",
           display: "grid",
@@ -657,7 +658,7 @@ function RouteMapPreview({
         )}
       </div>
 
-      <div style={{ height: 300, position: "relative" }}>
+      <div className="copilot-map-preview" style={{ height: 300, position: "relative" }}>
         <LeafletMap
           routes={routes}
           selectedRoute={selected}
@@ -1126,6 +1127,7 @@ export default function CopilotPage() {
               </div>
 
               <div
+                className="copilot-bubble-content"
                 style={{
                   maxWidth: msg.preview ? "85%" : "72%",
                   minWidth: msg.preview ? "420px" : undefined,
