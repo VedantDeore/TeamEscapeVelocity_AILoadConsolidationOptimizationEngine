@@ -658,7 +658,7 @@ export default function ShipmentsPage() {
         </div>
 
         {/* ── Data Table ── */}
-        <div className="data-table-wrapper animate-slide-up">
+        <div className="table-responsive-wrapper animate-slide-up">
           <table className="data-table">
             <thead>
               <tr>

@@ -200,14 +200,14 @@ export default function DashboardPage() {
             Real-time logistics intelligence — {today}
           </p>
         </div>
-        <div style={{ display: "flex", gap: "10px" }}>
-          <Link href="/shipments">
-            <button className="btn btn-secondary">
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <Link href="/shipments" style={{ flex: "1 1 auto", minWidth: "140px" }}>
+            <button className="btn btn-secondary" style={{ width: "100%" }}>
               <Upload size={15} /> Upload Shipments
             </button>
           </Link>
-          <Link href="/consolidate">
-            <button className="btn btn-primary btn-lg">
+          <Link href="/consolidate" style={{ flex: "1 1 auto", minWidth: "140px" }}>
+            <button className="btn btn-primary btn-lg" style={{ width: "100%" }}>
               <Zap size={16} /> Run Optimization
             </button>
           </Link>
@@ -432,7 +432,7 @@ export default function DashboardPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
             gap: "16px",
             marginBottom: "24px",
           }}
@@ -565,7 +565,7 @@ export default function DashboardPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 340px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
             gap: "16px",
             marginBottom: "24px",
           }}
@@ -574,7 +574,7 @@ export default function DashboardPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
+              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
               gap: "14px",
             }}
           >

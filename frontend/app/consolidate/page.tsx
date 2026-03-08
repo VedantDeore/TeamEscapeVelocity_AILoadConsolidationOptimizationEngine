@@ -417,7 +417,7 @@ export default function ConsolidationPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(4, 1fr)",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
                 gap: "16px",
               }}
             >
@@ -591,7 +591,7 @@ export default function ConsolidationPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(3, 1fr)",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
                   gap: "12px",
                 }}
               >
@@ -1010,7 +1010,7 @@ export default function ConsolidationPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr",
+                gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
                 gap: "16px",
                 marginBottom: "24px",
                 alignItems: "start",
@@ -1036,7 +1036,7 @@ export default function ConsolidationPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
                       gap: "18px",
                     }}
                   >
@@ -1178,7 +1178,7 @@ export default function ConsolidationPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
                       gap: "18px",
                     }}
                   >
@@ -1373,7 +1373,7 @@ export default function ConsolidationPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
                   gap: "14px",
                 }}
               >
@@ -1511,7 +1511,7 @@ export default function ConsolidationPage() {
                         <div
                           style={{
                             display: "grid",
-                            gridTemplateColumns: "1fr 1fr",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
                             gap: "10px",
                             fontSize: "12px",
                             marginBottom: "14px",
@@ -1847,7 +1847,7 @@ export default function ConsolidationPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr",
+                gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
                 gap: "16px",
                 marginTop: "24px",
               }}
