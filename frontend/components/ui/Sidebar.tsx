@@ -15,6 +15,8 @@ import {
   FileText,
   Settings,
   Truck,
+  Menu,
+  X,
 } from "lucide-react";
 import { getShipments } from "@/lib/api";
 
@@ -114,6 +116,7 @@ const navSections = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [shipmentCount, setShipmentCount] = useState<number | null>(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     getShipments()
@@ -121,8 +124,52 @@ export default function Sidebar() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    // Close mobile menu when route changes
+    setIsMobileMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    // Prevent body scroll when mobile menu is open
+    if (isMobileMenuOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isMobileMenuOpen]);
+
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(!isMobileMenuOpen);
+  };
+
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false);
+  };
+
   return (
-    <aside className="sidebar">
+    <>
+      {/* Mobile Menu Toggle Button */}
+      <button
+        className="mobile-menu-toggle"
+        onClick={toggleMobileMenu}
+        aria-label="Toggle menu"
+      >
+        {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
+
+      {/* Mobile Overlay */}
+      {isMobileMenuOpen && (
+        <div
+          className="mobile-overlay active"
+          onClick={closeMobileMenu}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""}`}>
       {/* Logo */}
       <div className="sidebar-logo">
         <div className="sidebar-logo-inner">
@@ -156,6 +203,7 @@ export default function Sidebar() {
                   key={item.href}
                   href={item.href}
                   className={`sidebar-link ${isActive ? "active" : ""}`}
+                  onClick={closeMobileMenu}
                 >
                   <Icon className="icon" size={16} />
                   <span>{item.label}</span>
@@ -184,5 +232,6 @@ export default function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }
