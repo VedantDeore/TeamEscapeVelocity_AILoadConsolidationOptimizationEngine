@@ -30,6 +30,7 @@ import {
   updateCostParams,
   createVehicle,
   createDepot,
+  updateDepot,
   deleteVehicle,
   deleteDepot,
   geocodeAddress,
@@ -125,6 +126,15 @@ export default function SettingsPage() {
     lat: 0,
     lng: 0,
   });
+  const [showEditDepot, setShowEditDepot] = useState(false);
+  const [editDepot, setEditDepot] = useState({
+    id: "",
+    name: "",
+    city: "",
+    lat: 0,
+    lng: 0,
+  });
+  const [savingDepot, setSavingDepot] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [showEditVehicle, setShowEditVehicle] = useState(false);
@@ -241,6 +251,17 @@ export default function SettingsPage() {
     }
   };
 
+  const openEditDepot = (depot: DepotLocation) => {
+    setEditDepot({
+      id: depot.id,
+      name: depot.name,
+      city: depot.city,
+      lat: depot.lat ?? 0,
+      lng: depot.lng ?? 0,
+    });
+    setShowEditDepot(true);
+  };
+
   const handleAddDepot = async () => {
     if (!newDepot.name || !newDepot.city) return;
     setAddingDepot(true);
@@ -267,6 +288,33 @@ export default function SettingsPage() {
       showToastMsg("Failed to add depot.");
     } finally {
       setAddingDepot(false);
+    }
+  };
+
+  const handleSaveDepot = async () => {
+    if (!editDepot.name || !editDepot.city) return;
+    setSavingDepot(true);
+    try {
+      let depotData = { name: editDepot.name, city: editDepot.city, lat: editDepot.lat, lng: editDepot.lng };
+      if ((!depotData.lat || !depotData.lng) && depotData.city) {
+        try {
+          const geo = await geocodeAddress(depotData.city);
+          if (geo) {
+            depotData.lat = geo.lat;
+            depotData.lng = geo.lng;
+          }
+        } catch {
+          // Geocoding failed, backend will try again
+        }
+      }
+      await updateDepot(editDepot.id, depotData);
+      showToastMsg("Depot updated successfully!");
+      setShowEditDepot(false);
+      refreshDepots();
+    } catch {
+      showToastMsg("Failed to update depot.");
+    } finally {
+      setSavingDepot(false);
     }
   };
 
@@ -716,6 +764,7 @@ export default function SettingsPage() {
                             <button
                               className="btn btn-ghost btn-icon"
                               style={{ width: 28, height: 28 }}
+                              onClick={() => openEditDepot(depot)}
                             >
                               <Edit size={13} />
                             </button>
@@ -1842,6 +1891,347 @@ export default function SettingsPage() {
                 ) : (
                   <>
                     <Save size={14} /> Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Depot Modal ── */}
+      {showEditDepot && (
+        <div className="stg-overlay" onClick={() => setShowEditDepot(false)}>
+          <div
+            className="stg-modal animate-slide-up"
+            style={{ maxWidth: 560 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="stg-modal-header">
+              <div>
+                <h3 className="stg-card-title">Edit Depot</h3>
+                <p className="stg-card-desc">
+                  Update warehouse or dispatch center details
+                </p>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setShowEditDepot(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="stg-modal-body">
+              {/* Quick city presets */}
+              <div
+                style={{
+                  marginBottom: 16,
+                  padding: "12px 16px",
+                  background: "rgba(16,185,129,0.04)",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid rgba(16,185,129,0.12)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "#10b981",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                    marginBottom: 8,
+                  }}
+                >
+                  📍 Quick Presets
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {[
+                    {
+                      label: "Mumbai",
+                      name: "Mumbai Central Hub",
+                      city: "Mumbai",
+                      lat: 19.076,
+                      lng: 72.8777,
+                    },
+                    {
+                      label: "Delhi",
+                      name: "Delhi NCR Hub",
+                      city: "New Delhi",
+                      lat: 28.6139,
+                      lng: 77.209,
+                    },
+                    {
+                      label: "Bengaluru",
+                      name: "Bengaluru Depot",
+                      city: "Bengaluru",
+                      lat: 12.9716,
+                      lng: 77.5946,
+                    },
+                    {
+                      label: "Chennai",
+                      name: "Chennai Port Hub",
+                      city: "Chennai",
+                      lat: 13.0827,
+                      lng: 80.2707,
+                    },
+                    {
+                      label: "Hyderabad",
+                      name: "Hyderabad Hub",
+                      city: "Hyderabad",
+                      lat: 17.385,
+                      lng: 78.4867,
+                    },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      className="btn btn-ghost btn-sm"
+                      style={{
+                        fontSize: "11px",
+                        padding: "4px 10px",
+                        border: "1px solid #e3e8ee",
+                      }}
+                      onClick={() =>
+                        setEditDepot((p) => ({
+                          ...p,
+                          name: preset.name,
+                          city: preset.city,
+                          lat: preset.lat,
+                          lng: preset.lng,
+                        }))
+                      }
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Validation warnings */}
+              {(() => {
+                const warnings: string[] = [];
+                if (!editDepot.name) warnings.push("Depot name is required");
+                if (!editDepot.city)
+                  warnings.push("City is required for geocoding");
+                if (!editDepot.lat && !editDepot.lng)
+                  warnings.push(
+                    "Coordinates needed — use Auto-fetch or enter manually",
+                  );
+                return warnings.length > 0 ? (
+                  <div
+                    style={{
+                      marginBottom: 16,
+                      padding: "10px 14px",
+                      background: "rgba(245,158,11,0.06)",
+                      border: "1px solid rgba(245,158,11,0.15)",
+                      borderRadius: "var(--radius-md)",
+                      fontSize: "12px",
+                      color: "#D97706",
+                    }}
+                  >
+                    {warnings.map((w, i) => (
+                      <div key={i} style={{ marginBottom: 2 }}>
+                        ⚠ {w}
+                      </div>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 16,
+                }}
+              >
+                <div className="stg-field">
+                  <label className="label">Depot Name</label>
+                  <input
+                    className="input"
+                    placeholder="e.g. Mumbai Central Hub"
+                    value={editDepot.name}
+                    onChange={(e) =>
+                      setEditDepot((p) => ({ ...p, name: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="stg-field">
+                  <label className="label">City</label>
+                  <input
+                    className="input"
+                    placeholder="e.g. Mumbai"
+                    value={editDepot.city}
+                    onChange={(e) =>
+                      setEditDepot((p) => ({ ...p, city: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="stg-field" style={{ gridColumn: "1 / -1" }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{
+                      width: "100%",
+                      gap: 8,
+                      justifyContent: "center",
+                      padding: "10px 16px",
+                      background: "rgba(99,91,255,0.06)",
+                      border: "1px solid rgba(99,91,255,0.15)",
+                    }}
+                    disabled={isGeocoding || !editDepot.city}
+                    onClick={async () => {
+                      if (!editDepot.city) return;
+                      setIsGeocoding(true);
+                      try {
+                        const geo = await geocodeAddress(editDepot.city);
+                        if (geo) {
+                          setEditDepot((p) => ({
+                            ...p,
+                            lat: geo.lat,
+                            lng: geo.lng,
+                          }));
+                          showToastMsg(
+                            `Coordinates fetched for ${editDepot.city}`,
+                          );
+                        } else {
+                          showToastMsg(
+                            "Could not find coordinates for this city",
+                          );
+                        }
+                      } catch {
+                        showToastMsg(
+                          "Geocoding failed. Enter coordinates manually.",
+                        );
+                      } finally {
+                        setIsGeocoding(false);
+                      }
+                    }}
+                  >
+                    {isGeocoding ? (
+                      <>
+                        <div
+                          className="loading-spinner"
+                          style={{ width: 14, height: 14 }}
+                        />{" "}
+                        Fetching...
+                      </>
+                    ) : (
+                      <>
+                        <MapPin size={14} /> 🌍 Auto-fetch Coordinates from City
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Coordinates section */}
+                <div className="stg-field" style={{ gridColumn: "1 / -1" }}>
+                  <div
+                    style={{
+                      padding: "14px 16px",
+                      background: "rgba(14,165,233,0.04)",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid rgba(14,165,233,0.12)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        color: "#0ea5e9",
+                        marginBottom: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <MapPin size={14} /> GPS Coordinates
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 12,
+                      }}
+                    >
+                      <div>
+                        <label className="label" style={{ fontSize: "11px" }}>
+                          Latitude
+                        </label>
+                        <input
+                          className="input"
+                          type="number"
+                          step="0.0001"
+                          placeholder="e.g. 19.076"
+                          value={editDepot.lat || ""}
+                          onChange={(e) =>
+                            setEditDepot((p) => ({
+                              ...p,
+                              lat: parseFloat(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="label" style={{ fontSize: "11px" }}>
+                          Longitude
+                        </label>
+                        <input
+                          className="input"
+                          type="number"
+                          step="0.0001"
+                          placeholder="e.g. 72.877"
+                          value={editDepot.lng || ""}
+                          onChange={(e) =>
+                            setEditDepot((p) => ({
+                              ...p,
+                              lng: parseFloat(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                    {(editDepot.lat !== 0 || editDepot.lng !== 0) && (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          fontSize: "11px",
+                          color: "var(--text-secondary)",
+                          textAlign: "center",
+                          fontWeight: 600,
+                        }}
+                      >
+                        📌 {editDepot.lat.toFixed(4)}° N,{" "}
+                        {editDepot.lng.toFixed(4)}° E
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="stg-modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowEditDepot(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSaveDepot}
+                disabled={
+                  savingDepot || !editDepot.name || !editDepot.city
+                }
+              >
+                {savingDepot ? (
+                  <>
+                    <div
+                      className="loading-spinner"
+                      style={{ width: 14, height: 14 }}
+                    />{" "}
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save size={14} /> Update Depot
                   </>
                 )}
               </button>

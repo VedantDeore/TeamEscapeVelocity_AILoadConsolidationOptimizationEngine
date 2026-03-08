@@ -72,6 +72,14 @@ def add_depot():
 def update_depot(depot_id):
     sb = get_supabase()
     data = request.get_json()
+
+    # Auto-geocode if lat/lng are missing or zero (same as add_depot)
+    if (not data.get("lat") or not data.get("lng")) and data.get("city"):
+        geo = geocode(f"{data['city'].strip()}, India")
+        if geo:
+            data["lat"] = geo["lat"]
+            data["lng"] = geo["lng"]
+
     result = sb.table("depots").update(data).eq("id", depot_id).execute()
     return jsonify(result.data[0])
 
