@@ -690,8 +690,11 @@ export default function RoutesPage() {
                   display: "flex",
                   flexDirection: "column",
                   gap: "10px",
-                  maxHeight: "620px",
+                  height: "620px",
                   overflowY: "auto",
+                  overflowX: "hidden",
+                  scrollbarWidth: "thin",
+                  paddingRight: "4px",
                 }}
               >
                 <div
@@ -702,6 +705,7 @@ export default function RoutesPage() {
                     top: 0,
                     zIndex: 5,
                     background: "var(--bg-card)",
+                    flexShrink: 0,
                   }}
                 >
                   <div
@@ -724,7 +728,7 @@ export default function RoutesPage() {
                       marginTop: "2px",
                     }}
                   >
-                    {routes.length} routes · Click to expand
+                    {routes.length} routes · Click to expand · Scroll for more
                   </div>
                 </div>
 
@@ -754,6 +758,7 @@ export default function RoutesPage() {
                           ? `0 0 12px ${route.color}20`
                           : undefined,
                         transition: "all 0.2s ease",
+                        flexShrink: 0,
                       }}
                     >
                       <div style={{ padding: "14px 16px" }}>
