@@ -76,14 +76,16 @@ def _scenario_no_consolidation(shipments: list) -> dict:
 
 def _scenario_ai_optimised(shipments: list) -> dict:
     """Scenario B: DBSCAN with AI-recommended constraints."""
-    clusters = cluster_shipments(shipments, {"dbscan_eps": 0.35, "dbscan_min_samples": 2})
+    result = cluster_shipments(shipments, {"dbscan_eps": 0.35, "dbscan_min_samples": 2})
+    clusters = result["clusters"] if isinstance(result, dict) else result
     return _compute_consolidated_scenario(clusters, shipments, "AI Optimised",
                                           "DBSCAN clustering with AI-recommended parameters")
 
 
 def _scenario_custom(shipments: list, constraints: dict) -> dict:
     """Scenario C: user-supplied constraints."""
-    clusters = cluster_shipments(shipments, constraints)
+    result = cluster_shipments(shipments, constraints)
+    clusters = result["clusters"] if isinstance(result, dict) else result
     return _compute_consolidated_scenario(clusters, shipments, "Custom Config",
                                           f"Custom: max_detour={constraints.get('max_detour_pct', 20)}%")
 

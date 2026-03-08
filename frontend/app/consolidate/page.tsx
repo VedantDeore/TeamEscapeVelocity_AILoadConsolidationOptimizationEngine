@@ -109,6 +109,7 @@ export default function ConsolidationPage() {
   const [editVehicleId, setEditVehicleId] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [overweightWarnings, setOverweightWarnings] = useState<any[]>([]);
+  const [vehicleLimitWarnings, setVehicleLimitWarnings] = useState<string[]>([]);
   const [allVehicles, setAllVehicles] = useState<any[]>([]);
 
   const RUN_STAGES = [
@@ -203,6 +204,7 @@ export default function ConsolidationPage() {
     setRunError(null);
     setRunStage(0);
     setOverweightWarnings([]);
+    setVehicleLimitWarnings([]);
 
     // Animate through stages
     const stageInterval = setInterval(() => {
@@ -218,6 +220,9 @@ export default function ConsolidationPage() {
         if (data && data.clusters && data.clusters.length > 0) {
           if (data.overweight_warnings && data.overweight_warnings.length > 0) {
             setOverweightWarnings(data.overweight_warnings);
+          }
+          if (data.vehicle_limit_warnings && data.vehicle_limit_warnings.length > 0) {
+            setVehicleLimitWarnings(data.vehicle_limit_warnings);
           }
           const mapped: ConsolidationPlan = {
             id: data.id || data.plan_id || "",
@@ -1003,6 +1008,56 @@ export default function ConsolidationPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Vehicle Limit Warnings */}
+            {vehicleLimitWarnings.length > 0 && (
+              <div
+                style={{
+                  background: "rgba(245, 158, 11, 0.08)",
+                  border: "1px solid rgba(245, 158, 11, 0.3)",
+                  borderRadius: "12px",
+                  padding: "16px 20px",
+                  marginBottom: "20px",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    marginBottom: "10px",
+                    fontWeight: 700,
+                    color: "#f59e0b",
+                    fontSize: "14px",
+                  }}
+                >
+                  <Truck size={18} />
+                  Vehicle Capacity Limit Reached
+                </div>
+                {vehicleLimitWarnings.map((msg: string, i: number) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      background: "rgba(245, 158, 11, 0.06)",
+                      borderRadius: "8px",
+                      padding: "10px 14px",
+                      fontSize: "13px",
+                      color: "var(--text-secondary)",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    <AlertTriangle
+                      size={14}
+                      style={{ color: "#f59e0b", flexShrink: 0 }}
+                    />
+                    <span>{msg}</span>
+                  </div>
+                ))}
               </div>
             )}
 

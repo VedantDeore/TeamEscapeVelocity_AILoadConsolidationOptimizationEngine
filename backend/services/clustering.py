@@ -98,6 +98,48 @@ def _custom_distance(i: int, j: int, shipments: list) -> float:
     return ALPHA * geo + BETA * time + GAMMA * dest
 
 
+def _bin_pack_into_subclusters(shipments: list, max_weight: float, max_volume: float) -> list:
+    """
+    First-fit-decreasing bin packing of shipments into sub-clusters,
+    each fitting within max_weight and max_volume.
+    """
+    sorted_shps = sorted(shipments, key=lambda s: s.get("weight_kg", 0), reverse=True)
+
+    bins: list[dict] = []
+
+    for s in sorted_shps:
+        w = s.get("weight_kg", 0)
+        v = s.get("volume_m3", 0)
+
+        placed = False
+        for b in bins:
+            if b["weight"] + w <= max_weight and b["volume"] + v <= max_volume:
+                b["shipments"].append(s)
+                b["weight"] += w
+                b["volume"] += v
+                placed = True
+                break
+
+        if not placed:
+            bins.append({"shipments": [s], "weight": w, "volume": v})
+
+    sub_clusters = []
+    for b in bins:
+        shps = b["shipments"]
+        lats = [s.get("origin_lat", 0) for s in shps]
+        lngs = [s.get("origin_lng", 0) for s in shps]
+        sub_clusters.append({
+            "shipment_ids": [s["id"] for s in shps if "id" in s],
+            "shipments": shps,
+            "total_weight": round(b["weight"], 2),
+            "total_volume": round(b["volume"], 3),
+            "centroid_lat": round(sum(lats) / len(lats), 6) if lats else 0,
+            "centroid_lng": round(sum(lngs) / len(lngs), 6) if lngs else 0,
+        })
+
+    return sub_clusters
+
+
 def _recommend_vehicle(total_weight: float, total_volume: float, vehicles: list | None = None, used_vehicle_ids: set | None = None) -> dict:
     """
     Pick the smallest vehicle that can fit the load.
@@ -161,29 +203,20 @@ def _recommend_vehicle(total_weight: float, total_volume: float, vehicles: list 
 
 # ── main entry point ───────────────────────────────────────
 
-def cluster_shipments(shipments: list, constraints: dict | None = None, vehicles: list | None = None) -> list:
+def cluster_shipments(shipments: list, constraints: dict | None = None, vehicles: list | None = None) -> dict:
     """
     Cluster shipments using DBSCAN with a custom distance metric.
+    Enforces vehicle capacity constraints and limits clusters to available vehicle count.
 
-    Args:
-        shipments:   list of shipment dicts (must have lat/lng, weight, volume, windows)
-        constraints: optional dict with keys like max_detour_pct, priority_rules
-
-    Returns:
-        List of cluster dicts:
-        {
-          "shipment_ids": [...],
-          "shipments":    [...],
-          "vehicle":      {...},
-          "total_weight": float,
-          "total_volume": float,
-          "utilization_pct": float,
-          "centroid_lat":  float,
-          "centroid_lng":  float,
-        }
+    Returns dict with keys:
+      - clusters: list of cluster dicts (each with utilization ≤ 100%)
+      - rejected_shipment_ids: IDs of shipments exceeding all vehicle capacities
+      - overflow_shipment_ids: IDs that couldn't be assigned (vehicle limit reached)
+      - warnings: list of warning messages
     """
+    empty_result = {"clusters": [], "rejected_shipment_ids": [], "overflow_shipment_ids": [], "warnings": []}
     if not shipments:
-        return []
+        return empty_result
 
     # ── Pre-group: force shipments with same origin_city + same pickup_date
     # into the same cluster (hard constraint) ──
@@ -257,49 +290,178 @@ def cluster_shipments(shipments: list, constraints: dict | None = None, vehicles
     # --- Combine forced + DBSCAN clusters ---
     all_cluster_indices = forced_clusters_indices + dbscan_clusters_indices
 
-    results = []
-    used_vehicle_ids = set()  # Track vehicles assigned to clusters
-    
+    # ── Capacity-aware cluster building ──
+    # Key insight: a vehicle doesn't need to carry ALL shipments at once.
+    # With interleaved routing (pickup→deliver→pickup→deliver), the vehicle
+    # only needs capacity for the HEAVIEST single shipment at any point.
+    # The VRP solver enforces this during route construction.
+    if vehicles:
+        max_cap_weight = max(v.get("max_weight_kg", v.get("max_weight", 0)) for v in vehicles)
+        max_cap_volume = max(v.get("max_volume_m3", v.get("max_volume", 0)) for v in vehicles)
+    else:
+        max_cap_weight = 12000
+        max_cap_volume = 42
+
+    raw_clusters = []
+    rejected_ids = []
+    overflow_ids = []
+    warnings = []
+
     for group_indices in all_cluster_indices:
         group_shipments = [shipments[i] for i in group_indices]
-        total_weight = sum(s.get("weight_kg", 0) for s in group_shipments)
-        total_volume = sum(s.get("volume_m3", 0) for s in group_shipments)
 
-        vehicle = _recommend_vehicle(total_weight, total_volume, vehicles, used_vehicle_ids)
-        # Mark this vehicle as used
-        if vehicle.get("id"):
-            used_vehicle_ids.add(vehicle["id"])
-        util_pct = 0.0
-        if vehicle["max_weight"] > 0:
-            weight_util = total_weight / vehicle["max_weight"]
-            volume_util = total_volume / vehicle["max_volume"] if vehicle["max_volume"] else 0
-            util_pct = round(max(weight_util, volume_util) * 100, 1)
+        valid_shipments = []
+        for s in group_shipments:
+            if s.get("weight_kg", 0) > max_cap_weight:
+                if s.get("id"):
+                    rejected_ids.append(s["id"])
+            else:
+                valid_shipments.append(s)
 
-        # Cluster centroid (average origin)
-        lats = [s.get("origin_lat", 0) for s in group_shipments]
-        lngs = [s.get("origin_lng", 0) for s in group_shipments]
+        if not valid_shipments:
+            continue
+
+        total_weight = sum(s.get("weight_kg", 0) for s in valid_shipments)
+        total_volume = sum(s.get("volume_m3", 0) for s in valid_shipments)
+        peak_weight = max(s.get("weight_kg", 0) for s in valid_shipments)
+        peak_volume = max(s.get("volume_m3", 0) for s in valid_shipments)
+
+        lats = [s.get("origin_lat", 0) for s in valid_shipments]
+        lngs = [s.get("origin_lng", 0) for s in valid_shipments]
         centroid_lat = round(sum(lats) / len(lats), 6)
         centroid_lng = round(sum(lngs) / len(lngs), 6)
 
-        results.append({
-            "shipment_ids": [s["id"] for s in group_shipments if "id" in s],
-            "shipments":    group_shipments,
-            "vehicle":      vehicle,
+        raw_clusters.append({
+            "shipment_ids": [s["id"] for s in valid_shipments if "id" in s],
+            "shipments": valid_shipments,
             "total_weight": round(total_weight, 2),
             "total_volume": round(total_volume, 3),
-            "utilization_pct": util_pct,
+            "peak_weight": round(peak_weight, 2),
+            "peak_volume": round(peak_volume, 3),
             "centroid_lat": centroid_lat,
             "centroid_lng": centroid_lng,
         })
 
+    # ── Merge clusters down to available vehicle count ──
+    # When DBSCAN creates more clusters than available vehicles (common with
+    # geographically spread shipments), we re-group by vehicle capacity.
+    # Each shipment goes to the smallest vehicle that can carry it individually.
+    # The VRP handles interleaved routing (pickup→deliver→pickup→deliver).
+    if vehicles and len(raw_clusters) > len(vehicles):
+        all_valid = []
+        for c in raw_clusters:
+            all_valid.extend(c["shipments"])
+
+        sorted_vehs = sorted(
+            vehicles,
+            key=lambda v: v.get("max_weight_kg", v.get("max_weight", 0)),
+        )
+        all_valid.sort(key=lambda s: s.get("weight_kg", 0), reverse=True)
+
+        vehicle_bins = {v["id"]: [] for v in sorted_vehs}
+
+        for s in all_valid:
+            w = s.get("weight_kg", 0)
+            # Among all vehicles that can carry this shipment, pick the one
+            # with fewest assigned shipments (for load balancing), then
+            # smallest capacity (for efficiency)
+            candidates = [
+                v for v in sorted_vehs
+                if v.get("max_weight_kg", v.get("max_weight", 0)) >= w
+            ]
+            if candidates:
+                best = min(
+                    candidates,
+                    key=lambda v: (
+                        len(vehicle_bins[v["id"]]),
+                        v.get("max_weight_kg", v.get("max_weight", 0)),
+                    ),
+                )
+                vehicle_bins[best["id"]].append(s)
+            else:
+                if s.get("id"):
+                    overflow_ids.append(s["id"])
+
+        raw_clusters = []
+        for v in sorted_vehs:
+            bin_shipments = vehicle_bins[v["id"]]
+            if not bin_shipments:
+                continue
+            tw = sum(s.get("weight_kg", 0) for s in bin_shipments)
+            tv = sum(s.get("volume_m3", 0) for s in bin_shipments)
+            pw = max(s.get("weight_kg", 0) for s in bin_shipments)
+            pv = max(s.get("volume_m3", 0) for s in bin_shipments)
+            lats = [s.get("origin_lat", 0) for s in bin_shipments]
+            lngs = [s.get("origin_lng", 0) for s in bin_shipments]
+            raw_clusters.append({
+                "shipment_ids": [s["id"] for s in bin_shipments if "id" in s],
+                "shipments": bin_shipments,
+                "total_weight": round(tw, 2),
+                "total_volume": round(tv, 3),
+                "peak_weight": round(pw, 2),
+                "peak_volume": round(pv, 3),
+                "centroid_lat": round(sum(lats) / len(lats), 6),
+                "centroid_lng": round(sum(lngs) / len(lngs), 6),
+            })
+
+    # Sort by peak weight descending — heaviest shipments pick vehicles first
+    raw_clusters.sort(key=lambda c: c["peak_weight"], reverse=True)
+
+    # ── Assign vehicles (unique per cluster) ──
+    # Vehicle is chosen based on peak_weight (heaviest single shipment),
+    # NOT total_weight, because interleaved routing means the vehicle
+    # only carries one shipment's weight at a time.
+    used_vehicle_ids = set()
+    results = []
+
+    for cluster in raw_clusters:
+        vehicle = _recommend_vehicle(
+            cluster["peak_weight"], cluster["peak_volume"], vehicles, used_vehicle_ids
+        )
+
+        if vehicle.get("overweight") or vehicle.get("shared"):
+            overflow_ids.extend(cluster.get("shipment_ids", []))
+            continue
+
+        if vehicle.get("id"):
+            used_vehicle_ids.add(vehicle["id"])
+
+        cluster["vehicle"] = vehicle
+        util_pct = 0.0
+        if vehicle["max_weight"] > 0:
+            weight_util = cluster["peak_weight"] / vehicle["max_weight"]
+            volume_util = cluster["peak_volume"] / vehicle["max_volume"] if vehicle["max_volume"] else 0
+            util_pct = round(max(weight_util, volume_util) * 100, 1)
+        cluster["utilization_pct"] = util_pct
+        results.append(cluster)
+
     # Sort by utilization descending (best clusters first)
     results.sort(key=lambda c: c["utilization_pct"], reverse=True)
 
-    # ── Route chaining: merge clusters where dest of one ≈ origin of another ──
-    # e.g. Mumbai→Delhi + Delhi→Srinagar → same vehicle does Mumbai→Delhi→Srinagar
+    # ── Route chaining ──
     results = _chain_compatible_clusters(results, vehicles, used_vehicle_ids)
 
-    return results
+    # ── Build warnings ──
+    if overflow_ids:
+        available_count = len(vehicles) if vehicles else 0
+        warnings.append(
+            f"Only {available_count} vehicle(s) available. "
+            f"{len(overflow_ids)} shipment(s) could not be assigned and will remain pending. "
+            f"Deliveries for these may be delayed. Consider adding more vehicles."
+        )
+
+    if rejected_ids:
+        warnings.append(
+            f"{len(rejected_ids)} shipment(s) exceed the weight capacity of all available vehicles "
+            f"(max {max_cap_weight:,.0f} kg). These shipments remain pending."
+        )
+
+    return {
+        "clusters": results,
+        "rejected_shipment_ids": rejected_ids,
+        "overflow_shipment_ids": overflow_ids,
+        "warnings": warnings,
+    }
 
 
 def _cluster_dest_centroid(cluster: dict) -> tuple:
@@ -365,16 +527,21 @@ def _chain_compatible_clusters(clusters: list, vehicles: list | None, used_vehic
                 dist = 9999
             if dist < CHAIN_DISTANCE_KM and dist < best_dist:
                 # For chained routes, the truck delivers leg A then picks up leg B.
-                # It only needs to carry the HEAVIER leg at any one time.
-                max_leg_weight = max(current["total_weight"], clusters[j]["total_weight"])
-                max_leg_volume = max(current["total_volume"], clusters[j]["total_volume"])
-                # Find if any vehicle can handle the heavier leg
+                # Peak load = heaviest individual shipment across both legs.
+                peak_w = max(
+                    current.get("peak_weight", current["total_weight"]),
+                    clusters[j].get("peak_weight", clusters[j]["total_weight"]),
+                )
+                peak_v = max(
+                    current.get("peak_volume", current["total_volume"]),
+                    clusters[j].get("peak_volume", clusters[j]["total_volume"]),
+                )
                 can_fit = False
                 sorted_v = sorted(vehicles, key=lambda v: v.get("max_weight_kg", v.get("max_weight", 0)))
                 for v in sorted_v:
                     mw = v.get("max_weight_kg", v.get("max_weight", 0))
                     mv = v.get("max_volume_m3", v.get("max_volume", 0))
-                    if mw >= max_leg_weight and mv >= max_leg_volume:
+                    if mw >= peak_w and mv >= peak_v:
                         can_fit = True
                         break
                 if can_fit:
@@ -382,7 +549,6 @@ def _chain_compatible_clusters(clusters: list, vehicles: list | None, used_vehic
                     best_dist = dist
 
         if best_j is not None:
-            # Merge cluster best_j into current
             chained = clusters[best_j]
             merged.add(best_j)
 
@@ -391,10 +557,14 @@ def _chain_compatible_clusters(clusters: list, vehicles: list | None, used_vehic
             combined_weight = current["total_weight"] + chained["total_weight"]
             combined_volume = current["total_volume"] + chained["total_volume"]
 
-            # For vehicle sizing: truck delivers leg A then picks up leg B,
-            # so it only carries the heavier leg at any one time
-            max_leg_weight = max(current["total_weight"], chained["total_weight"])
-            max_leg_volume = max(current["total_volume"], chained["total_volume"])
+            peak_w = max(
+                current.get("peak_weight", current["total_weight"]),
+                chained.get("peak_weight", chained["total_weight"]),
+            )
+            peak_v = max(
+                current.get("peak_volume", current["total_volume"]),
+                chained.get("peak_volume", chained["total_volume"]),
+            )
 
             # Re-pick best vehicle for heavier leg (release previous vehicles)
             old_vid = current["vehicle"].get("id")
@@ -404,17 +574,16 @@ def _chain_compatible_clusters(clusters: list, vehicles: list | None, used_vehic
             if chained_vid:
                 used_vehicle_ids.discard(chained_vid)
 
-            vehicle = _recommend_vehicle(max_leg_weight, max_leg_volume, vehicles, used_vehicle_ids)
+            vehicle = _recommend_vehicle(peak_w, peak_v, vehicles, used_vehicle_ids)
             if vehicle.get("id"):
                 used_vehicle_ids.add(vehicle["id"])
 
             util_pct = 0.0
             if vehicle["max_weight"] > 0:
-                weight_util = max_leg_weight / vehicle["max_weight"]
-                volume_util = max_leg_volume / vehicle["max_volume"] if vehicle["max_volume"] else 0
+                weight_util = peak_w / vehicle["max_weight"]
+                volume_util = peak_v / vehicle["max_volume"] if vehicle["max_volume"] else 0
                 util_pct = round(max(weight_util, volume_util) * 100, 1)
 
-            # Centroid of combined origins
             all_olats = [s.get("origin_lat", 0) for s in combined_shipments]
             all_olngs = [s.get("origin_lng", 0) for s in combined_shipments]
 
@@ -424,6 +593,8 @@ def _chain_compatible_clusters(clusters: list, vehicles: list | None, used_vehic
                 "vehicle":      vehicle,
                 "total_weight": round(combined_weight, 2),
                 "total_volume": round(combined_volume, 3),
+                "peak_weight":  round(peak_w, 2),
+                "peak_volume":  round(peak_v, 3),
                 "utilization_pct": util_pct,
                 "centroid_lat": round(sum(all_olats) / len(all_olats), 6),
                 "centroid_lng": round(sum(all_olngs) / len(all_olngs), 6),

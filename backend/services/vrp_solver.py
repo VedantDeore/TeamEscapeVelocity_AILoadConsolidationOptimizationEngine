@@ -240,29 +240,49 @@ def optimize_route(cluster_shipments: list, vehicle: dict,
             "shipment_idx": idx,
         })
 
-    # ── Constraint-aware nearest-neighbour ──
+    # ── Capacity-aware nearest-neighbour ──
     # A delivery is only eligible once its corresponding pickup is done.
+    # A pickup is only eligible if adding its weight won't exceed vehicle capacity.
+    # This naturally produces interleaved routes when capacity is tight:
+    #   Depot → Pickup A → Deliver A → Pickup B → Deliver B → Depot
+    # And batched routes when capacity allows:
+    #   Depot → Pickup A → Pickup B → Deliver A → Deliver B → Depot
     picked_up = set()        # shipment_idx whose pickup is done
     visited   = set()        # indices into all_stops that have been visited
     ordered   = []           # ordered list of stop dicts
+    nn_load   = 0.0          # current vehicle load during NN construction
 
     cur_lat, cur_lng = depot_stop["lat"], depot_stop["lng"]
 
     while len(visited) < len(all_stops):
-        # Find eligible stops: pickups (always eligible) + deliveries (only if pickup done)
         eligible = []
         for si, stop in enumerate(all_stops):
             if si in visited:
                 continue
             if stop["type"] == "pickup":
-                eligible.append(si)
+                if nn_load + stop["weight_kg"] <= max_capacity:
+                    eligible.append(si)
             elif stop["type"] == "delivery" and stop["shipment_idx"] in picked_up:
                 eligible.append(si)
 
         if not eligible:
+            # Deadlock safety: all remaining pickups exceed capacity and
+            # no deliveries are available. Force the lightest remaining pickup.
+            remaining_pickups = [
+                si for si in range(len(all_stops))
+                if si not in visited and all_stops[si]["type"] == "pickup"
+            ]
+            if remaining_pickups:
+                nearest_si = min(remaining_pickups, key=lambda si: all_stops[si]["weight_kg"])
+                stop = all_stops[nearest_si]
+                visited.add(nearest_si)
+                ordered.append(stop)
+                picked_up.add(stop["shipment_idx"])
+                nn_load += stop["weight_kg"]
+                cur_lat, cur_lng = stop["lat"], stop["lng"]
+                continue
             break
 
-        # Pick nearest eligible stop
         nearest_si = min(eligible, key=lambda si: _haversine_km(
             cur_lat, cur_lng, all_stops[si]["lat"], all_stops[si]["lng"]
         ))
@@ -273,19 +293,29 @@ def optimize_route(cluster_shipments: list, vehicle: dict,
 
         if stop["type"] == "pickup":
             picked_up.add(stop["shipment_idx"])
+            nn_load += stop["weight_kg"]
+        elif stop["type"] == "delivery":
+            nn_load -= stop["weight_kg"]
+            nn_load = max(0, nn_load)
 
         cur_lat, cur_lng = stop["lat"], stop["lng"]
 
     # ── 2-opt improvement (preserving pickup-before-delivery constraint) ──
-    def _is_valid_order(order):
-        """Check that every delivery comes after its pickup."""
+    def _is_valid_order(order, cap=None):
+        """Check pickup-before-delivery AND that load never exceeds capacity."""
         seen_pickups = set()
+        load = 0.0
         for stop in order:
             if stop["type"] == "pickup":
                 seen_pickups.add(stop["shipment_idx"])
+                load += stop.get("weight_kg", 0)
+                if cap is not None and load > cap:
+                    return False
             elif stop["type"] == "delivery":
                 if stop["shipment_idx"] not in seen_pickups:
                     return False
+                load -= stop.get("weight_kg", 0)
+                load = max(0, load)
         return True
 
     def _route_distance(order, start_lat, start_lng):
@@ -303,7 +333,7 @@ def optimize_route(cluster_shipments: list, vehicle: dict,
         for i in range(len(ordered) - 1):
             for j in range(i + 2, len(ordered)):
                 new_order = ordered[:i+1] + list(reversed(ordered[i+1:j+1])) + ordered[j+1:]
-                if _is_valid_order(new_order):
+                if _is_valid_order(new_order, max_capacity):
                     old_dist = _route_distance(ordered, depot_stop["lat"], depot_stop["lng"])
                     new_dist = _route_distance(new_order, depot_stop["lat"], depot_stop["lng"])
                     if new_dist < old_dist - 0.01:
