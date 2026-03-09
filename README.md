@@ -110,7 +110,7 @@ graph TD;
 ### **Backend**
 *   **Framework:** Python Flask
 *   **Optimization Engine:** Google OR-Tools, scipy.optimize
-*   **Machine Learning:** scikit-learn (DBSCAN), Pandas, Numpy
+*   **Machine Learning:** scikit-learn (DBSCAN), Pandas, Numpy, model training
 *   **Geospatial / Routing:** Geopy, OpenRouteService API
 *   **AI Agent:** Groq (Mixtral 8x7B / Llama 3)
 *   **Utilities:** ReportLab (PDFs), OpenPyXL, Requests
