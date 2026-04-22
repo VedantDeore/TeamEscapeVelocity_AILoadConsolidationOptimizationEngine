@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
@@ -21,9 +21,14 @@ import {
   Calendar,
   Sun,
   Moon,
+  Play,
+  User,
+  X,
 } from "lucide-react";
 import { type Route as RouteType } from "@/lib/mock-data";
-import { getRoutes } from "@/lib/api";
+import { getRoutes, getNearbyDrivers, getDriverLocations, assignDriverTask, updateDriverLocation, autoAssignDrivers, type NearbyDriver, type DriverLocation, type DriverAssignment } from "@/lib/api";
+import type { TruckSimulation, LiveDriver } from "@/components/ui/LeafletMap";
+import type { SimulationState } from "@/components/ui/SimulationPanel";
 
 const LeafletMap = dynamic(() => import("@/components/ui/LeafletMap"), {
   ssr: false,
@@ -61,6 +66,11 @@ const LeafletMap = dynamic(() => import("@/components/ui/LeafletMap"), {
     </div>
   ),
 });
+
+const SimulationPanel = dynamic(
+  () => import("@/components/ui/SimulationPanel"),
+  { ssr: false },
+);
 
 /* ─── helpers ─── */
 function formatDate(iso: string): string {
@@ -208,6 +218,399 @@ export default function RoutesPage() {
       ),
     [routes],
   );
+
+  // ─── Live Tracking ─────────────────────────────────────
+  const [liveMode, setLiveMode] = useState(false);
+  const [liveDrivers, setLiveDrivers] = useState<LiveDriver[]>([]);
+  const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!liveMode) {
+      if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
+      liveIntervalRef.current = null;
+      setLiveDrivers([]);
+      return;
+    }
+    const poll = async () => {
+      try {
+        const data = await getDriverLocations();
+        setLiveDrivers(data || []);
+      } catch { /* silent */ }
+    };
+    poll();
+    liveIntervalRef.current = setInterval(poll, 5000);
+    return () => { if (liveIntervalRef.current) clearInterval(liveIntervalRef.current); };
+  }, [liveMode]);
+
+  // ─── Driver Assignments (auto-assigned) ────────────────
+  const [routeDriverMap, setRouteDriverMap] = useState<Record<string, DriverAssignment>>({});
+  const [autoAssigning, setAutoAssigning] = useState(false);
+
+  useEffect(() => {
+    if (routes.length === 0) return;
+    const routeIds = routes.map((r) => r.id);
+    setAutoAssigning(true);
+    autoAssignDrivers(routeIds)
+      .then((result) => {
+        const map: Record<string, DriverAssignment> = {};
+        for (const a of result.assignments) {
+          map[a.route_id] = a;
+        }
+        setRouteDriverMap(map);
+      })
+      .catch(() => {})
+      .finally(() => setAutoAssigning(false));
+  }, [routes]);
+
+  // ─── Simulation Engine ─────────────────────────────────
+  const [showSimPanel, setShowSimPanel] = useState(false);
+  const [assignedDriver, setAssignedDriver] = useState<{ id: string; name: string } | null>(null);
+  const [driverModalOpen, setDriverModalOpen] = useState(false);
+  const [availableDrivers, setAvailableDrivers] = useState<NearbyDriver[]>([]);
+  const [driversLoading, setDriversLoading] = useState(false);
+
+  const [simState, setSimState] = useState<SimulationState>({
+    isRunning: false, isPaused: false, speed: 1,
+    currentStopIndex: 0, completedStops: [],
+    elapsedSimTime: 0, totalSimTime: 0,
+    truckPosition: null, currentCity: "",
+    phase: "idle",
+  });
+
+  const [truckSim, setTruckSim] = useState<TruckSimulation | null>(null);
+
+  const simRef = useRef<{
+    animFrameId: number | null;
+    lastTimestamp: number;
+    roadPath: [number, number][];
+    segDistances: number[];
+    totalDistance: number;
+    traveledDistance: number;
+    stopDistances: number[];
+    dwellTimer: number;
+    lastLocationPush: number;
+    trailPath: [number, number][];
+  }>({
+    animFrameId: null, lastTimestamp: 0, roadPath: [],
+    segDistances: [], totalDistance: 0, traveledDistance: 0,
+    stopDistances: [], dwellTimer: 0, lastLocationPush: 0,
+    trailPath: [],
+  });
+
+  const loadDrivers = useCallback(async () => {
+    setDriversLoading(true);
+    try {
+      const startPt = selectedRoute?.points?.[0];
+      if (startPt) {
+        const data = await getNearbyDrivers(startPt.lat, startPt.lng);
+        setAvailableDrivers(data || []);
+      } else {
+        setAvailableDrivers([]);
+      }
+    } catch { /* ignore */ }
+    setDriversLoading(false);
+  }, [selectedRoute]);
+
+  const handleAssignDriver = useCallback(async (driver: any) => {
+    if (!selectedRoute) return;
+    try {
+      await assignDriverTask(driver.id, selectedRoute.id);
+    } catch { /* proceed even if task creation fails for prototype */ }
+    setAssignedDriver({ id: driver.id, name: driver.name });
+    setDriverModalOpen(false);
+
+    setSimState((prev) => ({
+      ...prev,
+      phase: "assigned",
+      currentStopIndex: 0,
+      completedStops: [],
+      elapsedSimTime: 0,
+      truckPosition: selectedRoute.points[0]
+        ? { lat: selectedRoute.points[0].lat, lng: selectedRoute.points[0].lng }
+        : null,
+      currentCity: selectedRoute.points[0]?.city || "",
+    }));
+
+    const startPt = selectedRoute.points[0];
+    if (startPt) {
+      setTruckSim({
+        position: { lat: startPt.lat, lng: startPt.lng },
+        heading: 0,
+        currentStopIndex: 0,
+        completedStops: [],
+        phase: "assigned",
+        trailPath: [],
+      });
+    }
+    setShowSimPanel(true);
+  }, [selectedRoute]);
+
+  const startSimulation = useCallback(async () => {
+    if (!selectedRoute) return;
+    const points = selectedRoute.points;
+    if (points.length < 2) return;
+
+    // Fetch OSRM road route
+    const { fetchRoadRoute } = await import("@/components/ui/LeafletMap");
+    let roadPath: [number, number][] | null = null;
+    try {
+      const result = await fetchRoadRoute(points);
+      if (result) {
+        roadPath = result.map((p) => {
+          if (Array.isArray(p)) return [p[0] as number, p[1] as number] as [number, number];
+          const ll = p as { lat: number; lng: number };
+          return [ll.lat, ll.lng] as [number, number];
+        });
+      }
+    } catch { /* fallback to straight lines */ }
+
+    if (!roadPath || roadPath.length < 2) {
+      roadPath = points.map((p) => [p.lat, p.lng] as [number, number]);
+    }
+
+    // Calculate segment distances and total
+    const segDistances: number[] = [];
+    let totalDist = 0;
+    for (let i = 1; i < roadPath.length; i++) {
+      const dlat = roadPath[i][0] - roadPath[i - 1][0];
+      const dlng = roadPath[i][1] - roadPath[i - 1][1];
+      const d = Math.sqrt(dlat * dlat + dlng * dlng);
+      segDistances.push(d);
+      totalDist += d;
+    }
+
+    // Find the road-path index closest to each route stop
+    const stopDistances: number[] = [];
+    for (const stop of points) {
+      let bestDist = Infinity;
+      let bestAccum = 0;
+      let accum = 0;
+      for (let i = 0; i < roadPath.length; i++) {
+        const dlat = roadPath[i][0] - stop.lat;
+        const dlng = roadPath[i][1] - stop.lng;
+        const d = dlat * dlat + dlng * dlng;
+        if (d < bestDist) {
+          bestDist = d;
+          bestAccum = accum;
+        }
+        if (i < segDistances.length) accum += segDistances[i];
+      }
+      stopDistances.push(bestAccum);
+    }
+
+    const avgSpeedDeg = totalDist / (selectedRoute.totalDistanceKm / 50 * 3600);
+    const totalSimTimeSec = totalDist / (avgSpeedDeg || 0.0001);
+
+    simRef.current = {
+      animFrameId: null,
+      lastTimestamp: 0,
+      roadPath,
+      segDistances,
+      totalDistance: totalDist,
+      traveledDistance: 0,
+      stopDistances,
+      dwellTimer: 0,
+      lastLocationPush: 0,
+      trailPath: [roadPath[0]],
+    };
+
+    setSimState((prev) => ({
+      ...prev,
+      isRunning: true,
+      isPaused: false,
+      phase: "traveling",
+      totalSimTime: totalSimTimeSec,
+      elapsedSimTime: 0,
+      currentStopIndex: 0,
+      completedStops: [],
+      currentCity: points[0]?.city || "",
+    }));
+
+    const animate = (timestamp: number) => {
+      const ref = simRef.current;
+      if (!ref.lastTimestamp) ref.lastTimestamp = timestamp;
+      const rawDelta = (timestamp - ref.lastTimestamp) / 1000;
+      ref.lastTimestamp = timestamp;
+
+      setSimState((prev) => {
+        if (prev.isPaused || prev.phase === "completed") {
+          ref.animFrameId = requestAnimationFrame(animate);
+          return prev;
+        }
+
+        const delta = rawDelta * prev.speed;
+
+        // Dwell time at stops
+        if (ref.dwellTimer > 0) {
+          ref.dwellTimer -= delta;
+          if (ref.dwellTimer > 0) {
+            ref.animFrameId = requestAnimationFrame(animate);
+            return { ...prev, elapsedSimTime: prev.elapsedSimTime + delta };
+          }
+          // Dwell done - continue traveling
+          return { ...prev, phase: "traveling", elapsedSimTime: prev.elapsedSimTime + delta };
+        }
+
+        // Move truck
+        const speed = ref.totalDistance / (totalSimTimeSec || 1);
+        ref.traveledDistance += speed * delta;
+
+        // Check if arrived at next stop
+        const nextStopIdx = prev.currentStopIndex + 1;
+        if (nextStopIdx < stopDistances.length && ref.traveledDistance >= stopDistances[nextStopIdx]) {
+          const newCompleted = [...prev.completedStops, prev.currentStopIndex];
+          ref.dwellTimer = 3; // 3 sim-seconds dwell
+          const isLast = nextStopIdx >= points.length - 1;
+
+          const stopPt = points[nextStopIdx];
+          const pos = { lat: stopPt.lat, lng: stopPt.lng };
+
+          setTruckSim({
+            position: pos,
+            heading: 0,
+            currentStopIndex: nextStopIdx,
+            completedStops: newCompleted,
+            phase: isLast ? "completed" : "at_stop",
+            trailPath: ref.trailPath.map(([lat, lng]) => [lat, lng] as [number, number]),
+          });
+
+          // Push location to backend
+          if (assignedDriver) {
+            updateDriverLocation({
+              driver_id: assignedDriver.id,
+              lat: pos.lat, lng: pos.lng,
+              heading: 0, speed_kmh: 0,
+            }).catch(() => {});
+          }
+
+          if (isLast) {
+            return {
+              ...prev,
+              phase: "completed",
+              isRunning: false,
+              currentStopIndex: nextStopIdx,
+              completedStops: [...newCompleted, nextStopIdx],
+              elapsedSimTime: prev.totalSimTime,
+              currentCity: stopPt.city,
+            };
+          }
+
+          ref.animFrameId = requestAnimationFrame(animate);
+          return {
+            ...prev,
+            phase: "at_stop",
+            currentStopIndex: nextStopIdx,
+            completedStops: newCompleted,
+            elapsedSimTime: prev.elapsedSimTime + delta,
+            currentCity: stopPt.city,
+          };
+        }
+
+        // Interpolate position along road path
+        let accum = 0;
+        let segIdx = 0;
+        for (; segIdx < ref.segDistances.length; segIdx++) {
+          if (accum + ref.segDistances[segIdx] >= ref.traveledDistance) break;
+          accum += ref.segDistances[segIdx];
+        }
+        if (segIdx >= ref.segDistances.length) segIdx = ref.segDistances.length - 1;
+
+        const segLen = ref.segDistances[segIdx] || 1;
+        const frac = Math.min(1, (ref.traveledDistance - accum) / segLen);
+        const lat = ref.roadPath[segIdx][0] + (ref.roadPath[segIdx + 1]?.[0] ?? ref.roadPath[segIdx][0] - ref.roadPath[segIdx][0]) * frac;
+        const lng = ref.roadPath[segIdx][1] + (ref.roadPath[segIdx + 1]?.[1] ?? ref.roadPath[segIdx][1] - ref.roadPath[segIdx][1]) * frac;
+
+        // Heading calculation
+        const nextPt = ref.roadPath[Math.min(segIdx + 1, ref.roadPath.length - 1)];
+        const heading = Math.atan2(
+          nextPt[1] - ref.roadPath[segIdx][1],
+          nextPt[0] - ref.roadPath[segIdx][0],
+        ) * (180 / Math.PI);
+
+        // Add to trail
+        ref.trailPath.push([lat, lng]);
+        if (ref.trailPath.length > 500) ref.trailPath = ref.trailPath.slice(-400);
+
+        const pos = { lat, lng };
+
+        setTruckSim({
+          position: pos,
+          heading: 90 - heading,
+          currentStopIndex: prev.currentStopIndex,
+          completedStops: prev.completedStops,
+          phase: "traveling",
+          trailPath: ref.trailPath.map(([la, ln]) => [la, ln] as [number, number]),
+        });
+
+        // Push location to backend periodically (every 2 real seconds)
+        const now = Date.now();
+        if (assignedDriver && now - ref.lastLocationPush > 2000) {
+          ref.lastLocationPush = now;
+          updateDriverLocation({
+            driver_id: assignedDriver.id,
+            lat, lng,
+            heading: 90 - heading,
+            speed_kmh: 50 * prev.speed,
+          }).catch(() => {});
+        }
+
+        if (ref.traveledDistance < ref.totalDistance) {
+          ref.animFrameId = requestAnimationFrame(animate);
+        }
+
+        return {
+          ...prev,
+          elapsedSimTime: prev.elapsedSimTime + delta,
+          truckPosition: pos,
+          phase: "traveling",
+          currentCity: points[nextStopIdx]?.city || prev.currentCity,
+        };
+      });
+    };
+
+    simRef.current.animFrameId = requestAnimationFrame(animate);
+  }, [selectedRoute, assignedDriver]);
+
+  const handleSimPlay = useCallback(() => {
+    if (simState.phase === "assigned" || simState.phase === "idle") {
+      startSimulation();
+    } else {
+      setSimState((prev) => ({ ...prev, isPaused: false }));
+    }
+  }, [simState.phase, startSimulation]);
+
+  const handleSimPause = useCallback(() => {
+    setSimState((prev) => ({ ...prev, isPaused: true }));
+  }, []);
+
+  const handleSpeedChange = useCallback((speed: number) => {
+    setSimState((prev) => ({ ...prev, speed }));
+  }, []);
+
+  const handleSimClose = useCallback(() => {
+    if (simRef.current.animFrameId) {
+      cancelAnimationFrame(simRef.current.animFrameId);
+    }
+    setShowSimPanel(false);
+    setTruckSim(null);
+    setAssignedDriver(null);
+    setSimState({
+      isRunning: false, isPaused: false, speed: 1,
+      currentStopIndex: 0, completedStops: [],
+      elapsedSimTime: 0, totalSimTime: 0,
+      truckPosition: null, currentCity: "",
+      phase: "idle",
+    });
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (simRef.current.animFrameId) {
+        cancelAnimationFrame(simRef.current.animFrameId);
+      }
+    };
+  }, []);
 
   return (
     <>
@@ -521,6 +924,8 @@ export default function RoutesPage() {
                   onSelectRoute={handleSelectRoute}
                   viewMode={viewMode}
                   mapTheme={mapTheme}
+                  truckSimulation={truckSim}
+                  liveDrivers={liveMode ? liveDrivers : undefined}
                 />
 
                 {/* Overlay badges */}
@@ -685,6 +1090,175 @@ export default function RoutesPage() {
                     ))}
                   </div>
                 </div>
+
+                {/* Simulation Panel */}
+                {showSimPanel && selectedRoute && (
+                  <SimulationPanel
+                    routeStops={selectedRoute.points.map((p) => ({
+                      city: p.city,
+                      lat: p.lat,
+                      lng: p.lng,
+                      type: p.type,
+                      shipment_code: p.shipment_code,
+                      weight_kg: p.weight_kg,
+                    }))}
+                    vehicleName={selectedRoute.vehicleName}
+                    driverName={assignedDriver?.name || routeDriverMap[selectedRoute.id]?.driver_name || null}
+                    totalDistanceKm={selectedRoute.totalDistanceKm}
+                    estimatedCost={selectedRoute.fuelCost}
+                    simulationState={simState}
+                    onPlay={handleSimPlay}
+                    onPause={handleSimPause}
+                    onSpeedChange={handleSpeedChange}
+                    onClose={handleSimClose}
+                  />
+                )}
+
+                {/* Driver Assignment Modal */}
+                {driverModalOpen && (
+                  <div style={{
+                    position: "absolute",
+                    inset: 0,
+                    zIndex: 1300,
+                    background: "rgba(0,0,0,0.5)",
+                    backdropFilter: "blur(4px)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderRadius: "var(--radius-lg)",
+                  }}>
+                    <div style={{
+                      width: 340,
+                      maxHeight: 420,
+                      borderRadius: 16,
+                      background: "var(--bg-card)",
+                      border: "1px solid var(--border-primary)",
+                      boxShadow: "0 16px 48px rgba(0,0,0,0.3)",
+                      overflow: "hidden",
+                    }}>
+                      <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "14px 16px",
+                        borderBottom: "1px solid var(--border-secondary)",
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+                            Assign Driver
+                          </div>
+                          <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginTop: 1 }}>
+                            Sorted by proximity to depot
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setDriverModalOpen(false)}
+                          style={{
+                            width: 28, height: 28, borderRadius: 8,
+                            border: "1px solid var(--border-primary)",
+                            background: "transparent",
+                            color: "var(--text-secondary)",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <div style={{
+                        padding: "8px",
+                        maxHeight: 340,
+                        overflowY: "auto",
+                      }}>
+                        {driversLoading ? (
+                          <div style={{ textAlign: "center", padding: 30, color: "var(--text-tertiary)" }}>
+                            <Loader2 size={20} style={{ animation: "spin 1s linear infinite", margin: "0 auto 8px" }} />
+                            <p style={{ fontSize: 12 }}>Finding nearby drivers...</p>
+                          </div>
+                        ) : availableDrivers.length === 0 ? (
+                          <div style={{ textAlign: "center", padding: 30, color: "var(--text-tertiary)" }}>
+                            <User size={28} style={{ margin: "0 auto 8px", opacity: 0.4 }} />
+                            <p style={{ fontSize: 13, fontWeight: 600 }}>No Drivers Registered</p>
+                            <p style={{ fontSize: 11, marginTop: 4 }}>
+                              Register at <span style={{ color: "#635BFF", fontWeight: 600 }}>/driver/register</span>
+                            </p>
+                          </div>
+                        ) : (
+                          availableDrivers.map((driver, idx) => {
+                            const isBest = idx === 0 && !driver.has_active_task && driver.distance_km !== null;
+                            const isBusy = driver.has_active_task;
+                            return (
+                              <button
+                                key={driver.id}
+                                onClick={() => handleAssignDriver(driver)}
+                                disabled={isBusy}
+                                style={{
+                                  width: "100%", padding: "10px 12px", borderRadius: 10,
+                                  border: isBest ? "1px solid rgba(16,185,129,0.4)" : "1px solid var(--border-secondary)",
+                                  background: isBest ? "rgba(16,185,129,0.04)" : "transparent",
+                                  cursor: isBusy ? "not-allowed" : "pointer",
+                                  opacity: isBusy ? 0.5 : 1,
+                                  display: "flex", alignItems: "center", gap: 10,
+                                  marginBottom: 4, transition: "all 0.15s", textAlign: "left",
+                                }}
+                                onMouseEnter={(e) => { if (!isBusy) { e.currentTarget.style.background = isBest ? "rgba(16,185,129,0.08)" : "rgba(99,91,255,0.06)"; } }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = isBest ? "rgba(16,185,129,0.04)" : "transparent"; }}
+                              >
+                                <div style={{
+                                  width: 34, height: 34, borderRadius: 10,
+                                  background: isBest ? "rgba(16,185,129,0.15)" : "rgba(99,91,255,0.1)",
+                                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                                }}>
+                                  <User size={15} style={{ color: isBest ? "#10b981" : "#635BFF" }} />
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
+                                      {driver.name}
+                                    </span>
+                                    {isBest && (
+                                      <span style={{
+                                        fontSize: 8, fontWeight: 800, padding: "1px 5px",
+                                        borderRadius: 4, background: "#10b981", color: "#fff",
+                                        textTransform: "uppercase", letterSpacing: "0.5px",
+                                      }}>Recommended</span>
+                                    )}
+                                    {isBusy && (
+                                      <span style={{
+                                        fontSize: 8, fontWeight: 700, padding: "1px 5px",
+                                        borderRadius: 4, background: "rgba(245,158,11,0.15)", color: "#f59e0b",
+                                      }}>Busy</span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: 10, color: "var(--text-tertiary)", display: "flex", gap: 6, marginTop: 1 }}>
+                                    <span>{driver.phone}</span>
+                                    {driver.is_online && <span style={{ color: "#10b981", fontWeight: 700 }}>● Online</span>}
+                                    {driver.distance_km !== null && (
+                                      <span style={{ color: "var(--text-secondary)", fontWeight: 600 }}>
+                                        {driver.distance_km < 1 ? "< 1 km" : `${driver.distance_km} km away`}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                                  {driver.distance_km !== null ? (
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: isBest ? "#10b981" : "var(--text-secondary)" }}>
+                                      {driver.distance_km < 1 ? "<1" : driver.distance_km} km
+                                    </div>
+                                  ) : (
+                                    <ChevronRight size={14} style={{ color: "var(--text-tertiary)" }} />
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* ── Route Details Sidebar ── */}
@@ -712,27 +1286,119 @@ export default function RoutesPage() {
                     flexShrink: 0,
                   }}
                 >
-                  <div
-                    style={{
-                      fontSize: "14px",
-                      fontWeight: 700,
-                      color: "var(--text-primary)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <Truck size={15} style={{ color: "#635BFF" }} />
-                    Route Details
-                  </div>
-                  <div
-                    style={{
-                      fontSize: "11px",
-                      color: "var(--text-tertiary)",
-                      marginTop: "2px",
-                    }}
-                  >
-                    {routes.length} routes · Click to expand · Scroll for more
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div>
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: 700,
+                          color: "var(--text-primary)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <Truck size={15} style={{ color: "#635BFF" }} />
+                        Route Details
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          color: "var(--text-tertiary)",
+                          marginTop: "2px",
+                        }}
+                      >
+                        {routes.length} routes · Click to expand
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      {/* Live Data Toggle */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setLiveMode((v) => !v); }}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 4,
+                          padding: "5px 10px", borderRadius: 8,
+                          border: liveMode ? "1px solid rgba(16,185,129,0.4)" : "1px solid var(--border-primary)",
+                          background: liveMode ? "rgba(16,185,129,0.1)" : "transparent",
+                          color: liveMode ? "#10b981" : "var(--text-secondary)",
+                          cursor: "pointer", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap",
+                        }}
+                      >
+                        <span style={{
+                          width: 6, height: 6, borderRadius: "50%",
+                          background: liveMode ? "#10b981" : "var(--text-tertiary)",
+                          animation: liveMode ? "pulse-ring 1.5s ease infinite" : "none",
+                        }} />
+                        Live
+                        {liveMode && liveDrivers.length > 0 && (
+                          <span style={{
+                            background: "#10b981", color: "#fff", borderRadius: 4,
+                            padding: "0 4px", fontSize: 9, marginLeft: 2,
+                          }}>{liveDrivers.length}</span>
+                        )}
+                      </button>
+                      {/* Simulate Button */}
+                      {selectedRoute && !showSimPanel && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const driverInfo = routeDriverMap[selectedRoute.id];
+                            if (driverInfo) {
+                              setAssignedDriver({ id: driverInfo.driver_id, name: driverInfo.driver_name });
+                            } else {
+                              setAssignedDriver(null);
+                            }
+                            const startPt = selectedRoute.points[0];
+                            if (startPt) {
+                              setTruckSim({
+                                position: { lat: startPt.lat, lng: startPt.lng },
+                                heading: 0, currentStopIndex: 0, completedStops: [],
+                                phase: "assigned", trailPath: [],
+                              });
+                            }
+                            setSimState((prev) => ({
+                              ...prev, phase: "assigned", currentStopIndex: 0,
+                              completedStops: [], elapsedSimTime: 0,
+                              truckPosition: startPt ? { lat: startPt.lat, lng: startPt.lng } : null,
+                              currentCity: startPt?.city || "",
+                            }));
+                            setShowSimPanel(true);
+                          }}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 5,
+                            padding: "5px 10px", borderRadius: 8, border: "none",
+                            background: "linear-gradient(135deg, #635BFF, #8b5cf6)",
+                            color: "#fff", cursor: "pointer", fontSize: 10,
+                            fontWeight: 700, boxShadow: "0 2px 8px rgba(99,91,255,0.3)",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          <Play size={10} />
+                          Simulate
+                        </button>
+                      )}
+                    </div>
+                    {showSimPanel && (
+                      <span style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "4px 10px",
+                        borderRadius: 6,
+                        background: "rgba(99,91,255,0.1)",
+                        color: "#635BFF",
+                        fontSize: 10,
+                        fontWeight: 700,
+                      }}>
+                        <span style={{
+                          width: 6, height: 6, borderRadius: "50%",
+                          background: simState.phase === "completed" ? "#10b981" :
+                            simState.isRunning ? "#635BFF" : "#f59e0b",
+                          animation: simState.isRunning && !simState.isPaused ? "pulse-ring 1.5s ease infinite" : "none",
+                        }} />
+                        {simState.phase === "completed" ? "Done" : simState.isRunning ? "Live" : "Ready"}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -823,6 +1489,38 @@ export default function RoutesPage() {
                                 {deliveries.length} deliveries
                               </span>
                             </div>
+                            {routeDriverMap[route.id] && (
+                              <div style={{
+                                display: "flex", alignItems: "center", gap: 5,
+                                marginTop: 3,
+                              }}>
+                                {routeDriverMap[route.id].driver_avatar ? (
+                                  <img
+                                    src={routeDriverMap[route.id].driver_avatar!}
+                                    alt=""
+                                    style={{ width: 16, height: 16, borderRadius: "50%", objectFit: "cover" }}
+                                  />
+                                ) : (
+                                  <div style={{
+                                    width: 16, height: 16, borderRadius: "50%",
+                                    background: "linear-gradient(135deg, #635BFF, #8b5cf6)",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    fontSize: 8, fontWeight: 800, color: "#fff",
+                                  }}>
+                                    {routeDriverMap[route.id].driver_name.charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                                <span style={{ fontSize: 10, fontWeight: 600, color: "#a78bfa" }}>
+                                  {routeDriverMap[route.id].driver_name}
+                                </span>
+                                <span style={{
+                                  fontSize: 8, padding: "1px 4px", borderRadius: 3,
+                                  background: "rgba(16,185,129,0.12)", color: "#10b981", fontWeight: 700,
+                                }}>
+                                  {routeDriverMap[route.id].distance_km < 1 ? "<1" : routeDriverMap[route.id].distance_km} km
+                                </span>
+                              </div>
+                            )}
                           </div>
                           <div
                             style={{

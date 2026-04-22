@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import Sidebar from "@/components/ui/Sidebar";
+import { RootShell } from "./root-shell";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -30,10 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <div className="app-layout">
-          <Sidebar />
-          <div className="main-content">{children}</div>
-        </div>
+        <RootShell>{children}</RootShell>
       </body>
     </html>
   );

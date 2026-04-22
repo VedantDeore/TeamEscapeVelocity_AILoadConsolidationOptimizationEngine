@@ -12,16 +12,37 @@ const TILE_URLS = {
   dark: `https://api.maptiler.com/maps/streets-v2-dark/256/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`,
 };
 
+export interface TruckSimulation {
+  position: { lat: number; lng: number };
+  heading: number;
+  currentStopIndex: number;
+  completedStops: number[];
+  phase: "idle" | "assigned" | "traveling" | "at_stop" | "completed";
+  trailPath: L.LatLngExpression[];
+}
+
+export interface LiveDriver {
+  driver_id: string;
+  name: string;
+  is_online: boolean;
+  lat: number;
+  lng: number;
+  heading: number | null;
+  speed_kmh: number;
+}
+
 interface LeafletMapProps {
   routes: RouteType[];
   selectedRoute: RouteType | null;
   onSelectRoute: (route: RouteType) => void;
   viewMode: "before" | "after";
   mapTheme?: "light" | "dark";
+  truckSimulation?: TruckSimulation | null;
+  liveDrivers?: LiveDriver[];
 }
 
 /* ── OSRM road routing ─────────────────────────────────── */
-async function fetchRoadRoute(
+export async function fetchRoadRoute(
   points: { lat: number; lng: number }[],
 ): Promise<L.LatLngExpression[] | null> {
   if (points.length < 2) return null;
@@ -82,12 +103,20 @@ export default function LeafletMap({
   onSelectRoute,
   viewMode,
   mapTheme = "light",
+  truckSimulation,
+  liveDrivers,
 }: LeafletMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const layersRef = useRef<L.LayerGroup | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const roadCacheRef = useRef<Map<string, L.LatLngExpression[]>>(new Map());
+  const simLayerRef = useRef<L.LayerGroup | null>(null);
+  const truckMarkerRef = useRef<L.Marker | null>(null);
+  const truckPulseRef = useRef<L.Marker | null>(null);
+  const trailLineRef = useRef<L.Polyline | null>(null);
+  const liveLayerRef = useRef<L.LayerGroup | null>(null);
+  const liveMarkersRef = useRef<Map<string, L.Marker>>(new Map());
 
   // Initialize map
   useEffect(() => {
@@ -117,6 +146,7 @@ export default function LeafletMap({
     mapRef.current = map;
     layersRef.current = L.layerGroup().addTo(map);
     tileLayerRef.current = tileLayer;
+    liveLayerRef.current = L.layerGroup().addTo(map);
 
     return () => {
       map.remove();
@@ -440,6 +470,142 @@ export default function LeafletMap({
     }
   }, [routes, selectedRoute, viewMode, onSelectRoute, mapTheme]);
 
+  // Initialize simulation layer
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!simLayerRef.current) {
+      simLayerRef.current = L.layerGroup().addTo(map);
+    }
+  }, []);
+
+  // Truck simulation overlay
+  useEffect(() => {
+    const map = mapRef.current;
+    const simLayer = simLayerRef.current;
+    if (!map || !simLayer) return;
+
+    if (!truckSimulation || truckSimulation.phase === "idle") {
+      simLayer.clearLayers();
+      truckMarkerRef.current = null;
+      truckPulseRef.current = null;
+      trailLineRef.current = null;
+      return;
+    }
+
+    const { position, heading, completedStops, phase, trailPath } = truckSimulation;
+    if (!position) return;
+
+    const latLng = L.latLng(position.lat, position.lng);
+
+    // Trail line showing path already traveled
+    if (trailPath && trailPath.length > 1) {
+      if (trailLineRef.current) {
+        trailLineRef.current.setLatLngs(trailPath);
+      } else {
+        trailLineRef.current = L.polyline(trailPath, {
+          color: "#635BFF",
+          weight: 3,
+          opacity: 0.5,
+          dashArray: "4 6",
+          smoothFactor: 1,
+        }).addTo(simLayer);
+      }
+    }
+
+    // Truck marker
+    const rotation = heading || 0;
+    const truckHtml = `
+      <div class="sim-truck-container" style="transform: rotate(${rotation}deg); transition: transform 0.5s ease;">
+        <svg width="44" height="44" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <filter id="sim-truck-shadow">
+              <feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity="0.5"/>
+            </filter>
+          </defs>
+          <circle cx="22" cy="22" r="19" fill="#635BFF" stroke="#fff" stroke-width="3"
+                  filter="url(#sim-truck-shadow)"/>
+          <path d="M15,28 L15,19 L22,13 L29,19 L29,28 L24,28 L24,23 L20,23 L20,28 Z"
+                fill="#fff" opacity="0.95"/>
+          <polygon points="22,7 17,14 27,14" fill="#fff" opacity="0.85"/>
+        </svg>
+      </div>
+    `;
+
+    if (truckMarkerRef.current) {
+      truckMarkerRef.current.setLatLng(latLng);
+      truckMarkerRef.current.setIcon(L.divIcon({
+        className: "",
+        html: truckHtml,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22],
+      }));
+    } else {
+      truckMarkerRef.current = L.marker(latLng, {
+        icon: L.divIcon({
+          className: "",
+          html: truckHtml,
+          iconSize: [44, 44],
+          iconAnchor: [22, 22],
+        }),
+        zIndexOffset: 2000,
+      }).addTo(simLayer);
+    }
+
+    // Pulse ring
+    if (phase === "traveling") {
+      if (!truckPulseRef.current) {
+        truckPulseRef.current = L.marker(latLng, {
+          icon: L.divIcon({
+            className: "",
+            html: `<div class="driver-pulse"></div>`,
+            iconSize: [56, 56],
+            iconAnchor: [28, 28],
+          }),
+          zIndexOffset: 1999,
+        }).addTo(simLayer);
+      } else {
+        truckPulseRef.current.setLatLng(latLng);
+      }
+    } else {
+      if (truckPulseRef.current) {
+        simLayer.removeLayer(truckPulseRef.current);
+        truckPulseRef.current = null;
+      }
+    }
+
+    // Completed stop checkmarks
+    if (selectedRoute && completedStops.length > 0) {
+      const existingChecks = document.querySelectorAll(".sim-check-marker");
+      if (existingChecks.length !== completedStops.length) {
+        simLayer.eachLayer((layer) => {
+          if ((layer as any)._isCheckmark) simLayer.removeLayer(layer);
+        });
+        completedStops.forEach((idx) => {
+          const stop = selectedRoute.points[idx];
+          if (!stop) return;
+          const checkMarker = L.marker([stop.lat, stop.lng], {
+            icon: L.divIcon({
+              className: "sim-check-marker",
+              html: `<div style="
+                width: 22px; height: 22px; border-radius: 50%;
+                background: #10b981; border: 2px solid #fff;
+                display: flex; align-items: center; justify-content: center;
+                box-shadow: 0 2px 8px rgba(16,185,129,0.5);
+                font-size: 12px; color: #fff;
+              ">✓</div>`,
+              iconSize: [22, 22],
+              iconAnchor: [11, 11],
+            }),
+            zIndexOffset: 1500,
+          });
+          (checkMarker as any)._isCheckmark = true;
+          checkMarker.addTo(simLayer);
+        });
+      }
+    }
+  }, [truckSimulation, selectedRoute]);
+
   // Fly to selected route
   useEffect(() => {
     const map = mapRef.current;
@@ -450,6 +616,86 @@ export default function LeafletMap({
     );
     map.flyToBounds(bounds, { padding: [80, 80], duration: 0.8 });
   }, [selectedRoute]);
+
+  // Live driver markers — smooth updates without full re-render
+  useEffect(() => {
+    const map = mapRef.current;
+    const liveLayer = liveLayerRef.current;
+    if (!map || !liveLayer) return;
+
+    const drivers = liveDrivers || [];
+    const currentIds = new Set(drivers.map((d) => d.driver_id));
+    const markers = liveMarkersRef.current;
+
+    // Remove markers for drivers no longer in the list
+    markers.forEach((marker, id) => {
+      if (!currentIds.has(id)) {
+        liveLayer.removeLayer(marker);
+        markers.delete(id);
+      }
+    });
+
+    // Add or update markers
+    drivers.forEach((d) => {
+      const latLng = L.latLng(d.lat, d.lng);
+      const rotation = d.heading ?? 0;
+      const iconHtml = `
+        <div style="position:relative;">
+          <div style="
+            width:38px;height:38px;border-radius:50%;
+            background:linear-gradient(135deg,#10b981,#059669);
+            border:3px solid #fff;display:flex;align-items:center;justify-content:center;
+            box-shadow:0 3px 12px rgba(16,185,129,0.5);
+            transform:rotate(${rotation}deg);transition:transform 0.8s ease;
+          ">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round">
+              <path d="M12 2L12 16M12 2L7 7M12 2L17 7"/>
+            </svg>
+          </div>
+          <div style="
+            position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);
+            white-space:nowrap;font-size:9px;font-weight:700;
+            background:rgba(0,0,0,0.75);color:#fff;padding:1px 6px;
+            border-radius:4px;pointer-events:none;
+          ">${d.name}</div>
+          ${d.is_online ? `<div style="
+            position:absolute;top:-2px;right:-2px;width:10px;height:10px;
+            border-radius:50%;background:#22c55e;border:2px solid #fff;
+          "></div>` : ""}
+        </div>
+      `;
+
+      const existing = markers.get(d.driver_id);
+      if (existing) {
+        existing.setLatLng(latLng);
+        existing.setIcon(L.divIcon({
+          className: "",
+          html: iconHtml,
+          iconSize: [38, 38],
+          iconAnchor: [19, 19],
+        }));
+      } else {
+        const marker = L.marker(latLng, {
+          icon: L.divIcon({
+            className: "",
+            html: iconHtml,
+            iconSize: [38, 38],
+            iconAnchor: [19, 19],
+          }),
+          zIndexOffset: 1800,
+        }).addTo(liveLayer);
+
+        marker.bindTooltip(
+          `<div style="font-weight:700;font-size:12px;">${d.name}</div>
+           <div style="font-size:10px;opacity:0.7;margin-top:2px;">
+             ${d.speed_kmh > 0 ? `${d.speed_kmh.toFixed(0)} km/h` : "Stationary"}
+           </div>`,
+          { direction: "top", offset: [0, -24] },
+        );
+        markers.set(d.driver_id, marker);
+      }
+    });
+  }, [liveDrivers]);
 
   return (
     <>
@@ -536,6 +782,24 @@ export default function LeafletMap({
             transform: scale(2.2);
             opacity: 0;
           }
+        }
+
+        /* ── Simulation truck pulse ── */
+        .driver-pulse {
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          background: rgba(99, 91, 255, 0.15);
+          border: 2px solid rgba(99, 91, 255, 0.3);
+          animation: driver-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        @keyframes driver-ping {
+          0% { transform: scale(0.8); opacity: 1; }
+          75%, 100% { transform: scale(2); opacity: 0; }
+        }
+
+        .sim-truck-container {
+          filter: drop-shadow(0 4px 12px rgba(99,91,255,0.4));
         }
       `}</style>
       <div

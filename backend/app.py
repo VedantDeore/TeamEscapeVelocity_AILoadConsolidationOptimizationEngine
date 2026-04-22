@@ -21,6 +21,7 @@ from routes.analytics    import analytics_bp
 from routes.reports      import reports_bp
 from routes.settings     import settings_bp
 from routes.corridor     import corridor_bp
+from routes.drivers      import drivers_bp
 import logging
 
 # Configure logging
@@ -48,6 +49,7 @@ app.register_blueprint(analytics_bp)
 app.register_blueprint(reports_bp)
 app.register_blueprint(settings_bp)
 app.register_blueprint(corridor_bp)
+app.register_blueprint(drivers_bp)
 
 
 @app.route("/api/health", methods=["GET"])
