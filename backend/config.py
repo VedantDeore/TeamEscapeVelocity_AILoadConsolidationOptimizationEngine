@@ -6,7 +6,8 @@ Reads from .env file.
 import os
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+load_dotenv(_env_path, override=True)
 
 # Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")

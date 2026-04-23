@@ -27,6 +27,144 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   }
 }
 
+// ---- Drivers ----
+
+export async function registerDriver(data: {
+  name: string;
+  phone: string;
+  email?: string;
+  password: string;
+  license_number?: string;
+}) {
+  return fetchApi<{ driver: any; message: string }>("/api/drivers/register", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function loginDriver(phone: string, password: string) {
+  return fetchApi<{ driver: any }>("/api/drivers/login", {
+    method: "POST",
+    body: JSON.stringify({ phone, password }),
+  });
+}
+
+export async function listDrivers() {
+  return fetchApi<any[]>("/api/drivers");
+}
+
+export async function getActiveDrivers() {
+  return fetchApi<any[]>("/api/drivers/active");
+}
+
+export async function toggleDriverOnline(driverId: string, isOnline: boolean) {
+  return fetchApi<any>(`/api/drivers/${driverId}/toggle-online`, {
+    method: "POST",
+    body: JSON.stringify({ is_online: isOnline }),
+  });
+}
+
+export async function updateDriverLocation(data: {
+  driver_id: string;
+  lat: number;
+  lng: number;
+  heading?: number;
+  speed_kmh?: number;
+}) {
+  return fetchApi<any>("/api/drivers/location", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function assignDriverTask(driverId: string, routeId: string) {
+  return fetchApi<{ task: any }>(`/api/drivers/${driverId}/assign-task`, {
+    method: "POST",
+    body: JSON.stringify({ route_id: routeId }),
+  });
+}
+
+export async function getDriverTasks(driverId: string) {
+  return fetchApi<any[]>(`/api/drivers/${driverId}/tasks`);
+}
+
+export async function getDriverTask(taskId: string) {
+  return fetchApi<any>(`/api/drivers/tasks/${taskId}`);
+}
+
+export async function updateTaskStatus(
+  taskId: string,
+  data: { status?: string; current_stop_index?: number; stops?: any[] },
+) {
+  return fetchApi<any>(`/api/drivers/tasks/${taskId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export interface NearbyDriver {
+  id: string;
+  name: string;
+  phone: string;
+  is_online: boolean;
+  location: { lat: number; lng: number; heading?: number; speed_kmh?: number } | null;
+  distance_km: number | null;
+  has_active_task: boolean;
+  task_status: string | null;
+}
+
+export async function getNearbyDrivers(lat: number, lng: number) {
+  return fetchApi<NearbyDriver[]>(`/api/drivers/nearby?lat=${lat}&lng=${lng}`);
+}
+
+export interface DriverLocation {
+  driver_id: string;
+  name: string;
+  is_online: boolean;
+  lat: number;
+  lng: number;
+  heading: number | null;
+  speed_kmh: number;
+  recorded_at: string;
+}
+
+export async function getDriverLocations() {
+  return fetchApi<DriverLocation[]>("/api/drivers/locations");
+}
+
+export interface DriverAssignment {
+  route_id: string;
+  driver_id: string;
+  driver_name: string;
+  driver_avatar: string | null;
+  vehicle_name: string;
+  distance_km: number;
+  task_id: string;
+}
+
+export async function autoAssignDrivers(routeIds: string[]) {
+  return fetchApi<{ assignments: DriverAssignment[]; unassigned_routes: number }>(
+    "/api/drivers/auto-assign",
+    { method: "POST", body: JSON.stringify({ route_ids: routeIds }) },
+  );
+}
+
+export async function updateDriverProfile(
+  driverId: string,
+  data: { name?: string; email?: string; license_number?: string; avatar_url?: string },
+) {
+  return fetchApi<any>(`/api/drivers/${driverId}/profile`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function clearDriverTasks(force = false) {
+  return fetchApi<any>(`/api/drivers/clear-tasks${force ? "?force=1" : ""}`, {
+    method: "POST",
+  });
+}
+
 // ---- Shipments ----
 
 export async function getShipments(params?: Record<string, string>) {

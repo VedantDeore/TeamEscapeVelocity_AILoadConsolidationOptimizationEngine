@@ -21,6 +21,12 @@ import {
   CircleDot,
   Warehouse,
   X,
+  Users,
+  Phone,
+  Mail,
+  FileCheck,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { type Vehicle, type DepotLocation } from "@/lib/mock-data";
 import {
@@ -37,10 +43,13 @@ import {
   updateVehicle,
   getVehicleAvailability,
   releaseDeliveredClusters,
+  listDrivers,
+  clearDriverTasks,
 } from "@/lib/api";
 
 type SettingsTab =
   | "fleet"
+  | "drivers"
   | "depots"
   | "costs"
   | "emissions"
@@ -58,6 +67,12 @@ const TABS: {
       label: "Fleet",
       icon: Truck,
       description: "Vehicle management",
+    },
+    {
+      id: "drivers",
+      label: "Drivers",
+      icon: Users,
+      description: "Driver management",
     },
     {
       id: "depots",
@@ -159,6 +174,17 @@ export default function SettingsPage() {
     emission_factor: 0.062,
   });
   const [savingVehicle, setSavingVehicle] = useState(false);
+
+  const [allDrivers, setAllDrivers] = useState<any[]>([]);
+  const [driversLoading, setDriversLoading] = useState(false);
+
+  const refreshDrivers = () => {
+    setDriversLoading(true);
+    listDrivers()
+      .then((data) => setAllDrivers(data || []))
+      .catch(() => {})
+      .finally(() => setDriversLoading(false));
+  };
 
   const showToastMsg = (msg: string) => {
     setToast(msg);
@@ -336,6 +362,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (activeTab === "fleet") refreshVehicleAvailability();
+    if (activeTab === "drivers") refreshDrivers();
   }, [activeTab]);
 
   useEffect(() => {
@@ -882,6 +909,160 @@ export default function SettingsPage() {
                     </table>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* ═══ Drivers Tab ═══ */}
+            {activeTab === "drivers" && (
+              <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <div className="stg-section-header" style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "16px 20px", borderBottom: "1px solid var(--border-secondary)",
+                }}>
+                  <div>
+                    <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+                      Registered Drivers
+                    </h3>
+                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "2px 0 0" }}>
+                      {allDrivers.length} driver{allDrivers.length !== 1 ? "s" : ""} registered
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => {
+                        clearDriverTasks(true).then(() => showToastMsg("Old tasks cleared")).catch(() => {});
+                      }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 5,
+                        padding: "6px 12px", borderRadius: 8,
+                        border: "1px solid rgba(239,68,68,0.2)",
+                        background: "rgba(239,68,68,0.06)",
+                        color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                      }}
+                    >
+                      <Trash2 size={12} /> Clear Tasks
+                    </button>
+                    <button
+                      onClick={refreshDrivers}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 5,
+                        padding: "6px 12px", borderRadius: 8,
+                        border: "1px solid var(--border-primary)",
+                        background: "transparent",
+                        color: "var(--text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                      }}
+                    >
+                      <RefreshCw size={12} /> Refresh
+                    </button>
+                  </div>
+                </div>
+
+                {driversLoading ? (
+                  <div style={{ textAlign: "center", padding: 40, color: "var(--text-tertiary)" }}>
+                    <Loader2 size={22} style={{ animation: "spin 1s linear infinite", margin: "0 auto 8px" }} />
+                    <p style={{ fontSize: 12 }}>Loading drivers...</p>
+                  </div>
+                ) : allDrivers.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--text-tertiary)" }}>
+                    <Users size={32} style={{ margin: "0 auto 10px", opacity: 0.3 }} />
+                    <p style={{ fontSize: 14, fontWeight: 600 }}>No Drivers Yet</p>
+                    <p style={{ fontSize: 12, marginTop: 4 }}>
+                      Drivers can register at <span style={{ color: "#635BFF", fontWeight: 600 }}>/driver/register</span>
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    {allDrivers.map((driver, idx) => (
+                      <div
+                        key={driver.id}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 14,
+                          padding: "14px 20px",
+                          borderBottom: idx < allDrivers.length - 1 ? "1px solid var(--border-secondary)" : "none",
+                          transition: "background 0.15s",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(99,91,255,0.03)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                      >
+                        {driver.avatar_url ? (
+                          <img
+                            src={driver.avatar_url}
+                            alt={driver.name}
+                            style={{
+                              width: 44, height: 44, borderRadius: "50%",
+                              objectFit: "cover", border: "2px solid var(--border-primary)",
+                              flexShrink: 0,
+                            }}
+                          />
+                        ) : (
+                          <div style={{
+                            width: 44, height: 44, borderRadius: "50%",
+                            background: "linear-gradient(135deg, #635BFF, #8b5cf6)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 18, fontWeight: 800, color: "#fff", flexShrink: 0,
+                          }}>
+                            {driver.name?.charAt(0)?.toUpperCase() || "D"}
+                          </div>
+                        )}
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+                              {driver.name}
+                            </span>
+                            {driver.is_online && (
+                              <span style={{
+                                fontSize: 8, fontWeight: 800, padding: "2px 6px",
+                                borderRadius: 4, background: "rgba(16,185,129,0.12)",
+                                color: "#10b981", textTransform: "uppercase",
+                              }}>Online</span>
+                            )}
+                            {driver.is_verified && (
+                              <span style={{
+                                fontSize: 8, fontWeight: 800, padding: "2px 6px",
+                                borderRadius: 4, background: "rgba(99,91,255,0.1)",
+                                color: "#635BFF", textTransform: "uppercase",
+                              }}>Verified</span>
+                            )}
+                          </div>
+                          <div style={{
+                            display: "flex", alignItems: "center", gap: 12,
+                            fontSize: 11, color: "var(--text-tertiary)", marginTop: 3,
+                          }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                              <Phone size={10} /> {driver.phone}
+                            </span>
+                            {driver.email && (
+                              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                <Mail size={10} /> {driver.email}
+                              </span>
+                            )}
+                            {driver.license_number && (
+                              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                <FileCheck size={10} /> {driver.license_number}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{
+                          display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4,
+                        }}>
+                          <div style={{
+                            width: 10, height: 10, borderRadius: "50%",
+                            background: driver.is_online ? "#10b981" : "rgba(100,116,139,0.3)",
+                            boxShadow: driver.is_online ? "0 0 8px rgba(16,185,129,0.4)" : "none",
+                          }} />
+                          <span style={{
+                            fontSize: 9, color: "var(--text-tertiary)",
+                          }}>
+                            ID: {driver.id?.slice(0, 6)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
