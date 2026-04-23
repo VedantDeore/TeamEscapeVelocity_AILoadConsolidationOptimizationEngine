@@ -93,3 +93,4 @@ backend/generate_csv.py
 backend/test_*.py
 backend/.env.example
 frontend/.env.example
+lorri_consolidation_report.pdf
