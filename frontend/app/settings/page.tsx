@@ -15,6 +15,8 @@ import {
   Check,
   ChevronRight,
   Shield,
+  ShieldCheck,
+  ShieldX,
   Gauge,
   Eye,
   EyeOff,
@@ -24,9 +26,13 @@ import {
   Users,
   Phone,
   Mail,
-  FileCheck,
   Loader2,
   RefreshCw,
+  Calendar,
+  BadgeCheck,
+  ToggleLeft,
+  ToggleRight,
+  ZoomIn,
 } from "lucide-react";
 import { type Vehicle, type DepotLocation } from "@/lib/mock-data";
 import {
@@ -43,9 +49,9 @@ import {
   updateVehicle,
   getVehicleAvailability,
   releaseDeliveredClusters,
-  listDrivers,
   clearDriverTasks,
 } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 
 type SettingsTab =
   | "fleet"
@@ -177,13 +183,82 @@ export default function SettingsPage() {
 
   const [allDrivers, setAllDrivers] = useState<any[]>([]);
   const [driversLoading, setDriversLoading] = useState(false);
+  const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
+  const [driverPhotoZoom, setDriverPhotoZoom] = useState(false);
+  const [togglingVerify, setTogglingVerify] = useState(false);
+  const [togglingOnline, setTogglingOnline] = useState(false);
 
-  const refreshDrivers = () => {
+  const refreshDrivers = async () => {
     setDriversLoading(true);
-    listDrivers()
-      .then((data) => setAllDrivers(data || []))
-      .catch(() => {})
-      .finally(() => setDriversLoading(false));
+    try {
+      const { data, error } = await supabase
+        .from("drivers")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      setAllDrivers(data || []);
+    } catch {
+      setAllDrivers([]);
+    } finally {
+      setDriversLoading(false);
+    }
+  };
+
+  const toggleDriverVerified = async (driver: any) => {
+    setTogglingVerify(true);
+    try {
+      const newVal = !driver.is_verified;
+      const { error } = await supabase
+        .from("drivers")
+        .update({ is_verified: newVal })
+        .eq("id", driver.id);
+      if (error) throw error;
+      setAllDrivers((prev) =>
+        prev.map((d) => (d.id === driver.id ? { ...d, is_verified: newVal } : d))
+      );
+      if (selectedDriver?.id === driver.id)
+        setSelectedDriver((p: any) => p ? { ...p, is_verified: newVal } : p);
+      showToastMsg(newVal ? "Driver verified" : "Verification removed");
+    } catch {
+      showToastMsg("Failed to update verification");
+    } finally {
+      setTogglingVerify(false);
+    }
+  };
+
+  const toggleDriverOnlineAdmin = async (driver: any) => {
+    setTogglingOnline(true);
+    try {
+      const newVal = !driver.is_online;
+      const { error } = await supabase
+        .from("drivers")
+        .update({ is_online: newVal })
+        .eq("id", driver.id);
+      if (error) throw error;
+      setAllDrivers((prev) =>
+        prev.map((d) => (d.id === driver.id ? { ...d, is_online: newVal } : d))
+      );
+      if (selectedDriver?.id === driver.id)
+        setSelectedDriver((p: any) => p ? { ...p, is_online: newVal } : p);
+      showToastMsg(newVal ? "Driver set online" : "Driver set offline");
+    } catch {
+      showToastMsg("Failed to update status");
+    } finally {
+      setTogglingOnline(false);
+    }
+  };
+
+  const deleteDriver = async (driver: any) => {
+    if (!confirm(`Remove driver "${driver.name}"? This cannot be undone.`)) return;
+    try {
+      const { error } = await supabase.from("drivers").delete().eq("id", driver.id);
+      if (error) throw error;
+      setAllDrivers((prev) => prev.filter((d) => d.id !== driver.id));
+      setSelectedDriver(null);
+      showToastMsg("Driver removed");
+    } catch {
+      showToastMsg("Failed to remove driver");
+    }
   };
 
   const showToastMsg = (msg: string) => {
@@ -914,153 +989,755 @@ export default function SettingsPage() {
 
             {/* ═══ Drivers Tab ═══ */}
             {activeTab === "drivers" && (
-              <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                <div className="stg-section-header" style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "16px 20px", borderBottom: "1px solid var(--border-secondary)",
-                }}>
-                  <div>
-                    <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-                      Registered Drivers
-                    </h3>
-                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "2px 0 0" }}>
-                      {allDrivers.length} driver{allDrivers.length !== 1 ? "s" : ""} registered
-                    </p>
+              <div className="stg-section animate-fade-in">
+                {/* Stats row */}
+                <div className="stg-stats-row">
+                  <div className="stg-stat-card">
+                    <div className="stg-stat-icon" style={{ background: "linear-gradient(135deg, rgba(99,91,255,0.12), rgba(129,140,248,0.08))", color: "#635BFF" }}>
+                      <Users size={22} />
+                    </div>
+                    <div>
+                      <div className="stg-stat-value">{allDrivers.length}</div>
+                      <div className="stg-stat-label">Total Drivers</div>
+                    </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      onClick={() => {
-                        clearDriverTasks(true).then(() => showToastMsg("Old tasks cleared")).catch(() => {});
-                      }}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 5,
-                        padding: "6px 12px", borderRadius: 8,
-                        border: "1px solid rgba(239,68,68,0.2)",
-                        background: "rgba(239,68,68,0.06)",
-                        color: "#f87171", cursor: "pointer", fontSize: 11, fontWeight: 600,
-                      }}
-                    >
-                      <Trash2 size={12} /> Clear Tasks
-                    </button>
-                    <button
-                      onClick={refreshDrivers}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 5,
-                        padding: "6px 12px", borderRadius: 8,
-                        border: "1px solid var(--border-primary)",
-                        background: "transparent",
-                        color: "var(--text-secondary)", cursor: "pointer", fontSize: 11, fontWeight: 600,
-                      }}
-                    >
-                      <RefreshCw size={12} /> Refresh
-                    </button>
+                  <div className="stg-stat-card">
+                    <div className="stg-stat-icon" style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(6,182,212,0.08))", color: "#10b981" }}>
+                      <CircleDot size={22} />
+                    </div>
+                    <div>
+                      <div className="stg-stat-value">{allDrivers.filter(d => d.is_online).length}</div>
+                      <div className="stg-stat-label">Online Now</div>
+                    </div>
+                  </div>
+                  <div className="stg-stat-card">
+                    <div className="stg-stat-icon" style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(239,68,68,0.08))", color: "#f59e0b" }}>
+                      <ShieldCheck size={22} />
+                    </div>
+                    <div>
+                      <div className="stg-stat-value">{allDrivers.filter(d => d.is_verified).length}</div>
+                      <div className="stg-stat-label">Verified</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Header bar */}
+                <div className="stg-card" style={{ marginBottom: 20 }}>
+                  <div className="stg-card-header">
+                    <div>
+                      <h3 className="stg-card-title">Registered Drivers</h3>
+                      <p className="stg-card-desc">
+                        {allDrivers.length} driver{allDrivers.length !== 1 ? "s" : ""} synced from Supabase &middot; Click a card to manage
+                      </p>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={() => {
+                          clearDriverTasks(true).then(() => showToastMsg("Old tasks cleared")).catch(() => {});
+                        }}
+                        className="btn btn-sm"
+                        style={{ border: "1px solid rgba(239,68,68,0.2)", background: "rgba(239,68,68,0.06)", color: "#ef4444" }}
+                      >
+                        <Trash2 size={13} /> Clear Tasks
+                      </button>
+                      <button onClick={refreshDrivers} className="btn btn-secondary btn-sm">
+                        <RefreshCw size={13} className={driversLoading ? "spin" : ""} /> Refresh
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 {driversLoading ? (
-                  <div style={{ textAlign: "center", padding: 40, color: "var(--text-tertiary)" }}>
-                    <Loader2 size={22} style={{ animation: "spin 1s linear infinite", margin: "0 auto 8px" }} />
-                    <p style={{ fontSize: 12 }}>Loading drivers...</p>
+                  <div style={{ textAlign: "center", padding: 60, color: "var(--text-tertiary)" }}>
+                    <Loader2 size={28} style={{ animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
+                    <p style={{ fontSize: 13, fontWeight: 500 }}>Loading drivers from Supabase...</p>
                   </div>
                 ) : allDrivers.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--text-tertiary)" }}>
-                    <Users size={32} style={{ margin: "0 auto 10px", opacity: 0.3 }} />
-                    <p style={{ fontSize: 14, fontWeight: 600 }}>No Drivers Yet</p>
-                    <p style={{ fontSize: 12, marginTop: 4 }}>
-                      Drivers can register at <span style={{ color: "#635BFF", fontWeight: 600 }}>/driver/register</span>
+                  <div className="stg-card" style={{ textAlign: "center", padding: "60px 24px" }}>
+                    <Users size={44} style={{ margin: "0 auto 14px", opacity: 0.15, color: "var(--lorri-primary)" }} />
+                    <p style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>No Drivers Registered</p>
+                    <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
+                      Drivers can sign up at <span style={{ color: "#635BFF", fontWeight: 600 }}>/driver/register</span>
                     </p>
                   </div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column" }}>
-                    {allDrivers.map((driver, idx) => (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+                      gap: 20,
+                    }}
+                  >
+                    {allDrivers.map((driver) => (
                       <div
                         key={driver.id}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedDriver(driver); } }}
+                        onClick={() => setSelectedDriver(driver)}
                         style={{
-                          display: "flex", alignItems: "center", gap: 14,
-                          padding: "14px 20px",
-                          borderBottom: idx < allDrivers.length - 1 ? "1px solid var(--border-secondary)" : "none",
-                          transition: "background 0.15s",
+                          background: "var(--bg-card, #fff)",
+                          border: "1px solid var(--border-primary)",
+                          borderRadius: 16,
+                          overflow: "hidden",
+                          cursor: "pointer",
+                          transition: "box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease",
+                          display: "flex",
+                          flexDirection: "column",
+                          boxShadow: "var(--shadow-sm)",
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(99,91,255,0.03)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                          e.currentTarget.style.boxShadow = "0 8px 28px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04)";
+                          e.currentTarget.style.borderColor = "rgba(99, 91, 255, 0.18)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "";
+                          e.currentTarget.style.boxShadow = "var(--shadow-sm)";
+                          e.currentTarget.style.borderColor = "var(--border-primary)";
+                        }}
                       >
-                        {driver.avatar_url ? (
-                          <img
-                            src={driver.avatar_url}
-                            alt={driver.name}
-                            style={{
-                              width: 44, height: 44, borderRadius: "50%",
-                              objectFit: "cover", border: "2px solid var(--border-primary)",
-                              flexShrink: 0,
-                            }}
-                          />
-                        ) : (
-                          <div style={{
-                            width: 44, height: 44, borderRadius: "50%",
-                            background: "linear-gradient(135deg, #635BFF, #8b5cf6)",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: 18, fontWeight: 800, color: "#fff", flexShrink: 0,
-                          }}>
-                            {driver.name?.charAt(0)?.toUpperCase() || "D"}
-                          </div>
-                        )}
+                        <div
+                          style={{
+                            height: 3,
+                            background: driver.is_verified
+                              ? "linear-gradient(90deg, #635BFF, #7c3aed, #0ea5e9)"
+                              : "linear-gradient(90deg, #e2e8f0, #f1f5f9)",
+                          }}
+                        />
 
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
-                              {driver.name}
-                            </span>
-                            {driver.is_online && (
-                              <span style={{
-                                fontSize: 8, fontWeight: 800, padding: "2px 6px",
-                                borderRadius: 4, background: "rgba(16,185,129,0.12)",
-                                color: "#10b981", textTransform: "uppercase",
-                              }}>Online</span>
+                        <div style={{ padding: "20px 20px 0", display: "flex", gap: 16, alignItems: "flex-start" }}>
+                          <div style={{ position: "relative", flexShrink: 0 }}>
+                            {driver.avatar_url ? (
+                              <img
+                                src={driver.avatar_url}
+                                alt=""
+                                style={{
+                                  width: 64,
+                                  height: 64,
+                                  borderRadius: 16,
+                                  objectFit: "cover",
+                                  border: "1px solid var(--border-primary)",
+                                }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: 64,
+                                  height: 64,
+                                  borderRadius: 16,
+                                  background: "linear-gradient(145deg, #635BFF 0%, #8b5cf6 100%)",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 24,
+                                  fontWeight: 800,
+                                  color: "#fff",
+                                }}
+                              >
+                                {driver.name?.charAt(0)?.toUpperCase() || "D"}
+                              </div>
                             )}
-                            {driver.is_verified && (
-                              <span style={{
-                                fontSize: 8, fontWeight: 800, padding: "2px 6px",
-                                borderRadius: 4, background: "rgba(99,91,255,0.1)",
-                                color: "#635BFF", textTransform: "uppercase",
-                              }}>Verified</span>
-                            )}
+                            <span
+                              style={{
+                                position: "absolute",
+                                bottom: 2,
+                                right: 2,
+                                width: 12,
+                                height: 12,
+                                borderRadius: "50%",
+                                background: driver.is_online ? "#10b981" : "#94a3b8",
+                                border: "2px solid var(--bg-card, #fff)",
+                                boxShadow: driver.is_online ? "0 0 0 1px rgba(16, 185, 129, 0.35)" : "none",
+                              }}
+                            />
                           </div>
-                          <div style={{
-                            display: "flex", alignItems: "center", gap: 12,
-                            fontSize: 11, color: "var(--text-tertiary)", marginTop: 3,
-                          }}>
-                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                              <Phone size={10} /> {driver.phone}
-                            </span>
-                            {driver.email && (
-                              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                                <Mail size={10} /> {driver.email}
+
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+                              <span
+                                style={{
+                                  fontSize: 16,
+                                  fontWeight: 700,
+                                  color: "var(--text-primary)",
+                                  letterSpacing: "-0.02em",
+                                }}
+                              >
+                                {driver.name}
                               </span>
-                            )}
-                            {driver.license_number && (
-                              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                                <FileCheck size={10} /> {driver.license_number}
+                              {driver.is_verified && <BadgeCheck size={18} style={{ color: "#6366f1", flexShrink: 0 }} />}
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-secondary)" }}>
+                                <Phone size={13} style={{ color: "var(--text-tertiary)", flexShrink: 0, opacity: 0.85 }} />
+                                <span style={{ fontWeight: 500 }}>{driver.phone}</span>
+                              </div>
+                              {driver.email && (
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-tertiary)" }}>
+                                  <Mail size={13} style={{ flexShrink: 0, opacity: 0.8 }} />
+                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{driver.email}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  padding: "4px 10px",
+                                  borderRadius: 999,
+                                  background: driver.is_verified ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)",
+                                  color: driver.is_verified ? "#047857" : "#b45309",
+                                  border: `1px solid ${driver.is_verified ? "rgba(16, 185, 129, 0.2)" : "rgba(245, 158, 11, 0.2)"}`,
+                                }}
+                              >
+                                {driver.is_verified ? "Verified" : "Pending review"}
                               </span>
-                            )}
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  padding: "4px 10px",
+                                  borderRadius: 999,
+                                  background: driver.is_online ? "rgba(16, 185, 129, 0.08)" : "rgba(100, 116, 139, 0.08)",
+                                  color: driver.is_online ? "#047857" : "#64748b",
+                                  border: `1px solid ${driver.is_online ? "rgba(16, 185, 129, 0.16)" : "rgba(100, 116, 139, 0.12)"}`,
+                                }}
+                              >
+                                {driver.is_online ? "Online" : "Offline"}
+                              </span>
+                              {driver.license_number && (
+                                <span
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: 500,
+                                    padding: "4px 10px",
+                                    borderRadius: 8,
+                                    background: "var(--bg-secondary)",
+                                    color: "var(--text-secondary)",
+                                    border: "1px solid var(--border-secondary)",
+                                    fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
+                                    maxWidth: "100%",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                  }}
+                                  title={driver.license_number}
+                                >
+                                  {driver.license_number}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
-                        <div style={{
-                          display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4,
-                        }}>
-                          <div style={{
-                            width: 10, height: 10, borderRadius: "50%",
-                            background: driver.is_online ? "#10b981" : "rgba(100,116,139,0.3)",
-                            boxShadow: driver.is_online ? "0 0 8px rgba(16,185,129,0.4)" : "none",
-                          }} />
-                          <span style={{
-                            fontSize: 9, color: "var(--text-tertiary)",
-                          }}>
-                            ID: {driver.id?.slice(0, 6)}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            padding: "16px 20px 18px",
+                            marginTop: 4,
+                          }}
+                        >
+                          <span style={{ fontSize: 12, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 4 }}>
+                            <ChevronRight size={14} style={{ opacity: 0.5 }} />
+                            Open profile
                           </span>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); toggleDriverVerified(driver); }}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              padding: "8px 14px",
+                              borderRadius: 10,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              border: "none",
+                              cursor: "pointer",
+                              background: driver.is_verified
+                                ? "var(--bg-secondary)"
+                                : "linear-gradient(135deg, #635BFF, #7c3aed)",
+                              color: driver.is_verified ? "var(--text-secondary)" : "#fff",
+                              boxShadow: driver.is_verified ? "none" : "0 2px 8px rgba(99, 91, 255, 0.25)",
+                            }}
+                          >
+                            {driver.is_verified ? <ShieldX size={14} /> : <ShieldCheck size={14} />}
+                            {driver.is_verified ? "Revoke" : "Verify"}
+                          </button>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "12px 20px",
+                            borderTop: "1px solid var(--border-secondary)",
+                            background: "var(--bg-secondary)",
+                            fontSize: 11,
+                            color: "var(--text-tertiary)",
+                          }}
+                        >
+                          <code
+                            style={{
+                              fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
+                              fontSize: 11,
+                              background: "var(--bg-tertiary)",
+                              padding: "2px 8px",
+                              borderRadius: 6,
+                              color: "var(--text-tertiary)",
+                            }}
+                          >
+                            {driver.id?.slice(0, 8)}…
+                          </code>
+                          {driver.created_at && (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <Calendar size={11} style={{ opacity: 0.7 }} />
+                              {new Date(driver.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </span>
+                          )}
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* ═══ Driver Detail Modal ═══ */}
+                {selectedDriver && (
+                  <div
+                    className="stg-overlay"
+                    onClick={() => { setSelectedDriver(null); setDriverPhotoZoom(false); }}
+                  >
+                    <div
+                      className="stg-modal"
+                      style={{
+                        width: 480,
+                        maxWidth: "min(94vw, 480px)",
+                        maxHeight: "min(90vh, 720px)",
+                        display: "flex",
+                        flexDirection: "column",
+                        overflow: "hidden",
+                        borderRadius: 16,
+                        padding: 0,
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div
+                        style={{
+                          flexShrink: 0,
+                          minHeight: 100,
+                          background: selectedDriver.is_online
+                            ? "linear-gradient(160deg, #4f46e5 0%, #6366f1 45%, #22d3ee 100%)"
+                            : "linear-gradient(160deg, #64748b 0%, #94a3b8 100%)",
+                          position: "relative",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          aria-label="Close"
+                          onClick={() => { setSelectedDriver(null); setDriverPhotoZoom(false); }}
+                          style={{
+                            position: "absolute",
+                            top: 12,
+                            right: 12,
+                            width: 32,
+                            height: 32,
+                            borderRadius: 10,
+                            background: "rgba(255,255,255,0.2)",
+                            backdropFilter: "blur(6px)",
+                            border: "1px solid rgba(255,255,255,0.25)",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#fff",
+                          }}
+                        >
+                          <X size={16} />
+                        </button>
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 14,
+                            left: 16,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: "5px 12px",
+                            borderRadius: 999,
+                            background: "rgba(255,255,255,0.2)",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#fff",
+                            letterSpacing: "0.02em",
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: "50%",
+                              background: selectedDriver.is_online ? "#4ade80" : "rgba(255,255,255,0.55)",
+                            }}
+                          />
+                          {selectedDriver.is_online ? "Active" : "Inactive"}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", justifyContent: "center", marginTop: -40, position: "relative", zIndex: 2, flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => { if (selectedDriver.avatar_url) setDriverPhotoZoom(true); }}
+                          style={{
+                            position: "relative",
+                            padding: 0,
+                            border: "none",
+                            background: "none",
+                            cursor: selectedDriver.avatar_url ? "zoom-in" : "default",
+                            borderRadius: "50%",
+                          }}
+                        >
+                          {selectedDriver.avatar_url ? (
+                            <img
+                              src={selectedDriver.avatar_url}
+                              alt=""
+                              style={{
+                                width: 88,
+                                height: 88,
+                                borderRadius: "50%",
+                                objectFit: "cover",
+                                border: "4px solid #fff",
+                                boxShadow: "0 4px 20px rgba(15, 23, 42, 0.12)",
+                              }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: 88,
+                                height: 88,
+                                borderRadius: "50%",
+                                background: "linear-gradient(145deg, #6366f1, #8b5cf6)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 32,
+                                fontWeight: 800,
+                                color: "#fff",
+                                border: "4px solid #fff",
+                                boxShadow: "0 4px 20px rgba(99, 102, 241, 0.25)",
+                              }}
+                            >
+                              {selectedDriver.name?.charAt(0)?.toUpperCase() || "D"}
+                            </div>
+                          )}
+                          {selectedDriver.avatar_url && (
+                            <span
+                              style={{
+                                position: "absolute",
+                                bottom: 2,
+                                right: 2,
+                                width: 28,
+                                height: 28,
+                                borderRadius: "50%",
+                                background: "#fff",
+                                border: "1px solid var(--border-primary)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "var(--text-secondary)",
+                                boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+                              }}
+                            >
+                              <ZoomIn size={14} />
+                            </span>
+                          )}
+                        </button>
+                      </div>
+
+                      <div
+                        style={{
+                          flex: 1,
+                          minHeight: 0,
+                          overflowY: "auto",
+                          padding: "4px 24px 24px",
+                        }}
+                      >
+                        <div style={{ textAlign: "center", marginBottom: 20, paddingTop: 4 }}>
+                          <h2
+                            style={{
+                              fontSize: 20,
+                              fontWeight: 800,
+                              color: "var(--text-primary)",
+                              letterSpacing: "-0.02em",
+                              margin: "0 0 6px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 8,
+                            }}
+                          >
+                            {selectedDriver.name}
+                            {selectedDriver.is_verified && <BadgeCheck size={22} style={{ color: "#6366f1" }} />}
+                          </h2>
+                          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0, lineHeight: 1.5 }}>
+                            Tap the photo to view full size
+                            {selectedDriver.avatar_url ? "" : " (no photo uploaded)"}
+                          </p>
+                        </div>
+
+                        <div
+                          style={{
+                            background: "var(--bg-primary)",
+                            borderRadius: 12,
+                            border: "1px solid var(--border-secondary)",
+                            marginBottom: 20,
+                            overflow: "hidden",
+                          }}
+                        >
+                          {[
+                            { label: "System ID", value: selectedDriver.id, mono: true },
+                            { label: "Phone", value: selectedDriver.phone || "—" },
+                            { label: "Email", value: selectedDriver.email || "—" },
+                            { label: "License", value: selectedDriver.license_number || "—", mono: true },
+                            {
+                              label: "Registered",
+                              value: selectedDriver.created_at
+                                ? new Date(selectedDriver.created_at).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+                                : "—",
+                            },
+                            {
+                              label: "Last updated",
+                              value: selectedDriver.updated_at
+                                ? new Date(selectedDriver.updated_at).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
+                                : "—",
+                            },
+                          ].map((row, i, arr) => (
+                            <div
+                              key={row.label}
+                              style={{
+                                padding: "12px 16px",
+                                borderBottom: i < arr.length - 1 ? "1px solid var(--border-secondary)" : "none",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  letterSpacing: "0.08em",
+                                  textTransform: "uppercase",
+                                  color: "var(--text-tertiary)",
+                                  marginBottom: 4,
+                                }}
+                              >
+                                {row.label}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 14,
+                                  fontWeight: 500,
+                                  color: "var(--text-primary)",
+                                  wordBreak: row.mono ? "break-all" : "break-word",
+                                  fontFamily: row.mono
+                                    ? "var(--font-geist-mono), ui-monospace, monospace"
+                                    : "inherit",
+                                  lineHeight: 1.45,
+                                }}
+                              >
+                                {row.value}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              padding: "16px 18px",
+                              borderRadius: 12,
+                              background: "var(--bg-secondary)",
+                              border: "1px solid var(--border-primary)",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
+                              {selectedDriver.is_verified ? (
+                                <ShieldCheck size={20} style={{ color: "#059669", marginTop: 2, flexShrink: 0 }} />
+                              ) : (
+                                <ShieldX size={20} style={{ color: "#d97706", marginTop: 2, flexShrink: 0 }} />
+                              )}
+                              <div>
+                                <div style={{ fontSize: 14, fontWeight: 650, color: "var(--text-primary)" }}>
+                                  {selectedDriver.is_verified ? "Verified" : "Verification pending"}
+                                </div>
+                                <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2, lineHeight: 1.4 }}>
+                                  {selectedDriver.is_verified
+                                    ? "Identity confirmed. You can revoke if documents change."
+                                    : "Approve this driver after checking ID and license."}
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleDriverVerified(selectedDriver)}
+                              disabled={togglingVerify}
+                              className="btn btn-sm"
+                              style={{
+                                flexShrink: 0,
+                                marginLeft: "auto",
+                                minWidth: 100,
+                                justifyContent: "center",
+                                background: selectedDriver.is_verified ? "var(--bg-primary)" : "linear-gradient(135deg, #635BFF, #7c3aed)",
+                                color: selectedDriver.is_verified ? "var(--text-secondary)" : "#fff",
+                                border: selectedDriver.is_verified ? "1px solid var(--border-primary)" : "none",
+                                boxShadow: selectedDriver.is_verified ? "none" : "0 2px 8px rgba(99, 91, 255, 0.2)",
+                                opacity: togglingVerify ? 0.6 : 1,
+                              }}
+                            >
+                              {togglingVerify ? <Loader2 size={14} className="spin" /> : selectedDriver.is_verified ? <ShieldX size={14} /> : <ShieldCheck size={14} />}
+                              {selectedDriver.is_verified ? "Revoke" : "Verify"}
+                            </button>
+                          </div>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              padding: "16px 18px",
+                              borderRadius: 12,
+                              background: "var(--bg-primary)",
+                              border: "1px solid var(--border-secondary)",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
+                              {selectedDriver.is_online ? (
+                                <ToggleRight size={20} style={{ color: "#059669", flexShrink: 0, marginTop: 2 }} />
+                              ) : (
+                                <ToggleLeft size={20} style={{ color: "var(--text-tertiary)", flexShrink: 0, marginTop: 2 }} />
+                              )}
+                              <div>
+                                <div style={{ fontSize: 14, fontWeight: 650, color: "var(--text-primary)" }}>Presence</div>
+                                <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 2 }}>
+                                  {selectedDriver.is_online ? "Shown as available for dispatch" : "Shown as not on duty"}
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleDriverOnlineAdmin(selectedDriver)}
+                              disabled={togglingOnline}
+                              className="btn btn-secondary btn-sm"
+                              style={{ flexShrink: 0, marginLeft: "auto", minWidth: 120, justifyContent: "center", opacity: togglingOnline ? 0.6 : 1 }}
+                            >
+                              {togglingOnline ? <Loader2 size={14} className="spin" /> : selectedDriver.is_online ? <ToggleLeft size={14} /> : <ToggleRight size={14} />}
+                              {selectedDriver.is_online ? "Set offline" : "Set online"}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            padding: "14px 16px",
+                            borderRadius: 12,
+                            background: "rgba(239, 68, 68, 0.04)",
+                            border: "1px solid rgba(239, 68, 68, 0.12)",
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 650, color: "#b91c1c" }}>Remove from fleet</div>
+                            <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2, maxWidth: 280 }}>
+                              Deletes the driver record in Supabase. This cannot be undone.
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => deleteDriver(selectedDriver)}
+                            className="btn btn-sm"
+                            style={{
+                              background: "rgba(239, 68, 68, 0.08)",
+                              color: "#dc2626",
+                              border: "1px solid rgba(239, 68, 68, 0.25)",
+                            }}
+                          >
+                            <Trash2 size={14} /> Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {driverPhotoZoom && selectedDriver.avatar_url && (
+                      <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Profile photo"
+                        onClick={() => setDriverPhotoZoom(false)}
+                        style={{
+                          position: "fixed",
+                          inset: 0,
+                          zIndex: 200,
+                          background: "rgba(2, 6, 23, 0.88)",
+                          backdropFilter: "blur(10px)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: 24,
+                          cursor: "zoom-out",
+                        }}
+                      >
+                        <img
+                          src={selectedDriver.avatar_url}
+                          alt=""
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            maxWidth: "min(90vw, 520px)",
+                            maxHeight: "85vh",
+                            width: "auto",
+                            height: "auto",
+                            borderRadius: 12,
+                            objectFit: "contain",
+                            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+                            cursor: "default",
+                          }}
+                        />
+                        <button
+                          type="button"
+                          aria-label="Close photo"
+                          onClick={(e) => { e.stopPropagation(); setDriverPhotoZoom(false); }}
+                          style={{
+                            position: "fixed",
+                            top: 20,
+                            right: 20,
+                            width: 44,
+                            height: 44,
+                            borderRadius: 12,
+                            background: "rgba(255, 255, 255, 0.12)",
+                            border: "1px solid rgba(255, 255, 255, 0.2)",
+                            color: "#fff",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <X size={20} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

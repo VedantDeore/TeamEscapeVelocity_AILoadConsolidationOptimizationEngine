@@ -2,17 +2,26 @@
 Lorri — Geocoding utility using Nominatim (OpenStreetMap).
 Rate-limited to ~1 req/sec per Nominatim ToS.
 Results are cached in-memory to avoid duplicate calls.
+
+geopy is imported lazily to avoid blocking server startup (its SSL
+certificate resolution can hang on Windows).
 """
 
 import time
 import threading
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 
-_geolocator = Nominatim(user_agent="lorri-logistics-ai/1.0")
+_geolocator = None
 _cache: dict[str, dict | None] = {}
 _lock  = threading.Lock()
 _last_call = 0.0
+
+
+def _get_geolocator():
+    global _geolocator
+    if _geolocator is None:
+        from geopy.geocoders import Nominatim
+        _geolocator = Nominatim(user_agent="lorri-logistics-ai/1.0")
+    return _geolocator
 
 
 def geocode(address: str) -> dict | None:
@@ -21,19 +30,19 @@ def geocode(address: str) -> dict | None:
     Returns None if geocoding fails.
     """
     global _last_call
+    from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 
     key = address.strip().lower()
     if key in _cache:
         return _cache[key]
 
-    # Rate-limit to 1 req/sec
     with _lock:
         elapsed = time.time() - _last_call
         if elapsed < 1.1:
             time.sleep(1.1 - elapsed)
 
         try:
-            location = _geolocator.geocode(address, timeout=5)
+            location = _get_geolocator().geocode(address, timeout=5)
             _last_call = time.time()
         except (GeocoderTimedOut, GeocoderServiceError):
             _cache[key] = None
