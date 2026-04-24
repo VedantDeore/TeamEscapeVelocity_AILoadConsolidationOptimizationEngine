@@ -8,14 +8,28 @@ Falls back to a greedy nearest-neighbor tour if OR-Tools times out.
 """
 
 import math
-from geopy.distance import geodesic
+from utils.distance import geodesic
 
-# Try to import OR-Tools; gracefully degrade if not installed
-try:
-    from ortools.constraint_solver import routing_enums_pb2, pywrapcp
-    ORTOOLS_AVAILABLE = True
-except ImportError:
-    ORTOOLS_AVAILABLE = False
+ORTOOLS_AVAILABLE = None  # resolved lazily on first use
+pywrapcp = None
+routing_enums_pb2 = None
+
+
+def _ensure_ortools() -> bool:
+    global ORTOOLS_AVAILABLE, pywrapcp, routing_enums_pb2
+    if ORTOOLS_AVAILABLE is None:
+        try:
+            from ortools.constraint_solver import (
+                routing_enums_pb2 as _re,
+                pywrapcp as _pw,
+            )
+            pywrapcp = _pw
+            routing_enums_pb2 = _re
+            ORTOOLS_AVAILABLE = True
+        except ImportError:
+            ORTOOLS_AVAILABLE = False
+    return ORTOOLS_AVAILABLE
+
 
 
 # ── helpers ────────────────────────────────────────────────
@@ -102,7 +116,8 @@ def _route_from_order(stops: list, order: list) -> dict:
         "total_distance_km":  round(total_km, 2),
         "estimated_time":     f"{hours}h {minutes}m",
         "fuel_cost":          fuel_cost,
-        "solver":             "ortools" if ORTOOLS_AVAILABLE else "greedy",
+        "solver":             "ortools" if _ensure_ortools() else "greedy",
+
     }
 
 

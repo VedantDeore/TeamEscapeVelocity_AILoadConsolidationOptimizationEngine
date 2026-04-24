@@ -5,7 +5,7 @@ Matches shipments to fixed truck corridors and consolidates them efficiently.
 This is more realistic for Indian logistics where trucks run on fixed routes.
 """
 
-from geopy.distance import geodesic
+from utils.distance import geodesic
 from typing import List, Dict, Tuple, Optional
 
 

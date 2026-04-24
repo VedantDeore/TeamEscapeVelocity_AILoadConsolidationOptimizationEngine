@@ -18,11 +18,21 @@ import json
 import re
 import os
 
-try:
-    from groq import Groq
-    GROQ_AVAILABLE = True
-except ImportError:
-    GROQ_AVAILABLE = False
+GROQ_AVAILABLE = None
+Groq = None
+
+
+def _ensure_groq() -> bool:
+    global GROQ_AVAILABLE, Groq
+    if GROQ_AVAILABLE is None:
+        try:
+            from groq import Groq as _Groq
+            Groq = _Groq
+            GROQ_AVAILABLE = True
+        except ImportError:
+            GROQ_AVAILABLE = False
+    return GROQ_AVAILABLE
+
 
 from config import GROQ_API_KEY, GROQ_MODEL
 
@@ -233,7 +243,8 @@ def _rule_based_response(intent: str, message: str, context: dict) -> dict:
 
 def _call_groq(message: str, context: dict) -> dict | None:
     """Call Groq LLM and parse the JSON response."""
-    if not GROQ_AVAILABLE or not GROQ_API_KEY:
+    if not _ensure_groq() or not GROQ_API_KEY:
+
         return None
 
     try:

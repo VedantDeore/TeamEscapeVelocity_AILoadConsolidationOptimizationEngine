@@ -9,7 +9,8 @@ from services.corridor_engine import (
 )
 from services.carbon import calculate_emissions
 from datetime import datetime, timezone
-from geopy.distance import geodesic
+from utils.distance import geodesic
+
 
 corridor_bp = Blueprint("corridor", __name__)
 

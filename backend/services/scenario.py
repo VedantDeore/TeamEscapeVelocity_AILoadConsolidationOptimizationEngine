@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from services.clustering import cluster_shipments
 from services.carbon import calculate_emissions, calculate_single
-from geopy.distance import geodesic
+from utils.distance import geodesic
 
 # ── cost constants ─────────────────────────────────────────
 FUEL_COST_PER_KM     = 8.5

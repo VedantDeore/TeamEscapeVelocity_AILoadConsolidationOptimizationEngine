@@ -8,10 +8,9 @@ Uses a custom distance metric combining:
 """
 
 import math
-import numpy as np
-from sklearn.cluster import DBSCAN
-from sklearn.preprocessing import MinMaxScaler
-from geopy.distance import geodesic
+import math
+from utils.distance import geodesic
+
 
 
 # ── weighting factors ──────────────────────────────────────
@@ -259,6 +258,10 @@ def cluster_shipments(shipments: list, constraints: dict | None = None, vehicles
     # --- Run DBSCAN only on non-forced singletons ---
     dbscan_clusters_indices = []
     if len(singleton_indices) >= 2:
+        import numpy as np
+        from sklearn.cluster import DBSCAN
+
+
         singleton_shipments = [shipments[i] for i in singleton_indices]
         ns = len(singleton_shipments)
 
