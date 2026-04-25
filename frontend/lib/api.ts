@@ -32,6 +32,7 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
 export async function registerDriver(data: {
   name: string;
   phone: string;
+  home_address?: string;
   email?: string;
   password: string;
   license_number?: string;
@@ -139,19 +140,93 @@ export interface DriverAssignment {
   driver_avatar: string | null;
   vehicle_name: string;
   distance_km: number;
+  deadhead_km: number;
+  deadhead_cost: number;
+  driver_hourly_cost?: number;
+  total_driver_cost?: number;
+  estimated_hours?: number;
+  city_match: boolean;
+  driver_city: string;
   task_id: string;
+  task_status?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
 }
 
-export async function autoAssignDrivers(routeIds: string[]) {
+export async function getRouteAssignments(routeIds: string[]) {
   return fetchApi<{ assignments: DriverAssignment[]; unassigned_routes: number }>(
-    "/api/drivers/auto-assign",
+    "/api/drivers/route-assignments",
     { method: "POST", body: JSON.stringify({ route_ids: routeIds }) },
   );
 }
 
+export async function autoAssignDrivers(routeIds: string[], force = false) {
+  return fetchApi<{ assignments: DriverAssignment[]; unassigned_routes: number }>(
+    "/api/drivers/auto-assign",
+    { method: "POST", body: JSON.stringify({ route_ids: routeIds, force }) },
+  );
+}
+
+export async function startDriverTask(taskId: string) {
+  return fetchApi<any>(`/api/drivers/tasks/${taskId}/start`, { method: "POST" });
+}
+
+export interface DriverPosition {
+  driver_id: string;
+  name: string;
+  avatar_url?: string | null;
+  driver_status: string;
+  city: string;
+  lat: number;
+  lng: number;
+  is_online: boolean;
+}
+
+export async function getAllDriverPositions() {
+  return fetchApi<DriverPosition[]>("/api/drivers/all-positions");
+}
+
+export interface LiveJourneyPosition {
+  driver_id: string;
+  name: string;
+  avatar_url?: string | null;
+  lat: number;
+  lng: number;
+  city: string;
+  progress_pct: number;
+  elapsed_hours?: number;
+  total_hours?: number;
+  task_status: string;
+  is_online: boolean;
+}
+
+export async function getLiveJourneyPositions() {
+  return fetchApi<LiveJourneyPosition[]>("/api/drivers/live-journey-positions");
+}
+
+export async function releaseCompletedTrips() {
+  return fetchApi<{ released: number }>("/api/drivers/release-completed", {
+    method: "POST",
+  });
+}
+
 export async function updateDriverProfile(
   driverId: string,
-  data: { name?: string; email?: string; license_number?: string; avatar_url?: string },
+  data: {
+    name?: string;
+    email?: string;
+    license_number?: string;
+    avatar_url?: string;
+    home_address?: string;
+    home_city?: string;
+    home_lat?: number;
+    home_lng?: number;
+    current_city?: string;
+    current_lat?: number;
+    current_lng?: number;
+    driver_status?: string;
+    is_verified?: boolean;
+  },
 ) {
   return fetchApi<any>(`/api/drivers/${driverId}/profile`, {
     method: "PATCH",
@@ -161,6 +236,24 @@ export async function updateDriverProfile(
 
 export async function clearDriverTasks(force = false) {
   return fetchApi<any>(`/api/drivers/clear-tasks${force ? "?force=1" : ""}`, {
+    method: "POST",
+  });
+}
+
+export async function freeAllDrivers() {
+  return fetchApi<{ freed: number }>("/api/drivers/free-all", {
+    method: "POST",
+  });
+}
+
+export async function freeDriver(driverId: string) {
+  return fetchApi<any>(`/api/drivers/${driverId}/free`, {
+    method: "POST",
+  });
+}
+
+export async function simulateCompleteTask(taskId: string) {
+  return fetchApi<any>(`/api/drivers/tasks/${taskId}/simulate-complete`, {
     method: "POST",
   });
 }

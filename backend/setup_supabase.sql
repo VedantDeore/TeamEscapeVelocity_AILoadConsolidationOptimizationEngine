@@ -264,6 +264,65 @@ CREATE TABLE IF NOT EXISTS cost_params (
 );
 
 -- ============================================================
+-- DRIVERS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS drivers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT,
+  password_hash TEXT NOT NULL,
+  license_number TEXT,
+  is_online BOOLEAN DEFAULT false,
+  is_verified BOOLEAN DEFAULT false,
+  last_seen_at TIMESTAMPTZ,
+  avatar_url TEXT,
+  assigned_vehicle_id TEXT,
+  home_address TEXT,
+  home_city TEXT,
+  home_lat DOUBLE PRECISION,
+  home_lng DOUBLE PRECISION,
+  current_city TEXT,
+  current_lat DOUBLE PRECISION,
+  current_lng DOUBLE PRECISION,
+  driver_status TEXT DEFAULT 'idle_at_home',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================================
+-- DRIVER LOCATIONS (live GPS, one row per driver)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS driver_locations (
+  driver_id UUID PRIMARY KEY REFERENCES drivers(id) ON DELETE CASCADE,
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
+  heading DOUBLE PRECISION,
+  speed_kmh DOUBLE PRECISION DEFAULT 0,
+  recorded_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================================
+-- DRIVER TASKS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS driver_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  driver_id UUID REFERENCES drivers(id) ON DELETE CASCADE,
+  route_id UUID,
+  cluster_id UUID,
+  vehicle_name TEXT,
+  status TEXT DEFAULT 'assigned',
+  stops JSONB DEFAULT '[]',
+  current_stop_index INT DEFAULT 0,
+  deadhead_km DOUBLE PRECISION DEFAULT 0,
+  deadhead_cost DOUBLE PRECISION DEFAULT 0,
+  city_match BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ
+);
+
+-- ============================================================
 -- FEEDBACK
 -- ============================================================
 CREATE TABLE IF NOT EXISTS feedback (
@@ -295,6 +354,9 @@ ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cost_params ENABLE ROW LEVEL SECURITY;
 ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drivers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE driver_locations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE driver_tasks ENABLE ROW LEVEL SECURITY;
 
 -- Allow anon read/write for all tables (hackathon demo)
 CREATE POLICY "Allow all for anon" ON cities FOR ALL USING (true) WITH CHECK (true);
@@ -315,3 +377,6 @@ CREATE POLICY "Allow all for anon" ON chat_messages FOR ALL USING (true) WITH CH
 CREATE POLICY "Allow all for anon" ON reports FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for anon" ON cost_params FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for anon" ON feedback FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for anon" ON drivers FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for anon" ON driver_locations FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for anon" ON driver_tasks FOR ALL USING (true) WITH CHECK (true);

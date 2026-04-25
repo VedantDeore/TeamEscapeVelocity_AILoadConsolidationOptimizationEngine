@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Truck,
   MapPin,
@@ -52,6 +52,9 @@ import {
   releaseDeliveredClusters,
   listDrivers,
   clearDriverTasks,
+  freeAllDrivers,
+  freeDriver,
+  updateDriverProfile,
 } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 
@@ -189,31 +192,37 @@ export default function SettingsPage() {
   const [driverPhotoZoom, setDriverPhotoZoom] = useState(false);
   const [togglingVerify, setTogglingVerify] = useState(false);
   const [togglingOnline, setTogglingOnline] = useState(false);
+  const driverFetchRef = useRef(false);
 
-  const refreshDrivers = async () => {
+  const refreshDrivers = useCallback(async () => {
+    if (driverFetchRef.current) return;
+    driverFetchRef.current = true;
     setDriversLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("drivers")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      if (data && data.length > 0) {
-        setAllDrivers(data);
-        return;
+      let loaded = false;
+      try {
+        const { data, error } = await supabase
+          .from("drivers")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (!error && data && data.length > 0) {
+          setAllDrivers(data);
+          loaded = true;
+        }
+      } catch { /* fall back to API */ }
+      if (!loaded) {
+        try {
+          const data = await listDrivers();
+          setAllDrivers(data || []);
+        } catch {
+          setAllDrivers([]);
+        }
       }
-    } catch {
-      // fall back to API
-    }
-    try {
-      const data = await listDrivers();
-      setAllDrivers(data || []);
-    } catch {
-      setAllDrivers([]);
     } finally {
       setDriversLoading(false);
+      driverFetchRef.current = false;
     }
-  };
+  }, []);
 
   const toggleDriverVerified = async (driver: any) => {
     setTogglingVerify(true);
@@ -1051,6 +1060,18 @@ export default function SettingsPage() {
                       >
                         <Trash2 size={13} /> Clear Tasks
                       </button>
+                      <button
+                        onClick={() => {
+                          freeAllDrivers().then((res) => {
+                            showToastMsg(`${res.freed} driver(s) freed to home`);
+                            refreshDrivers();
+                          }).catch(() => {});
+                        }}
+                        className="btn btn-sm"
+                        style={{ border: "1px solid rgba(16,185,129,0.2)", background: "rgba(16,185,129,0.06)", color: "#10b981" }}
+                      >
+                        <MapPin size={13} /> Free All Drivers
+                      </button>
                       <button onClick={refreshDrivers} className="btn btn-secondary btn-sm">
                         <RefreshCw size={13} className={driversLoading ? "spin" : ""} /> Refresh
                       </button>
@@ -1218,6 +1239,55 @@ export default function SettingsPage() {
                               >
                                 {driver.is_online ? "Online" : "Offline"}
                               </span>
+                              {driver.driver_status && (
+                                <span
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    padding: "4px 10px",
+                                    borderRadius: 999,
+                                    background: driver.driver_status === "idle_at_home" ? "rgba(16,185,129,0.08)" :
+                                      driver.driver_status === "idle_at_depot" ? "rgba(245,158,11,0.08)" :
+                                      driver.driver_status === "assigned" ? "rgba(99,91,255,0.08)" :
+                                      "rgba(14,165,233,0.08)",
+                                    color: driver.driver_status === "idle_at_home" ? "#047857" :
+                                      driver.driver_status === "idle_at_depot" ? "#b45309" :
+                                      driver.driver_status === "assigned" ? "#635BFF" :
+                                      "#0ea5e9",
+                                    border: `1px solid ${driver.driver_status === "idle_at_home" ? "rgba(16,185,129,0.16)" :
+                                      driver.driver_status === "idle_at_depot" ? "rgba(245,158,11,0.16)" :
+                                      "rgba(99,91,255,0.16)"}`,
+                                  }}
+                                >
+                                  {driver.driver_status === "idle_at_home" ? "At Home" :
+                                   driver.driver_status === "idle_at_depot" ? `At Depot${driver.current_city ? ` (${driver.current_city})` : ""}` :
+                                   driver.driver_status === "assigned" ? "Assigned" :
+                                   driver.driver_status === "en_route" ? "En Route" : driver.driver_status}
+                                </span>
+                              )}
+                              {driver.driver_status === "idle_at_depot" && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    freeDriver(driver.id).then(() => {
+                                      showToastMsg(`${driver.name} freed to home`);
+                                      refreshDrivers();
+                                    }).catch(() => {});
+                                  }}
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    padding: "3px 8px",
+                                    borderRadius: 6,
+                                    border: "1px solid rgba(16,185,129,0.3)",
+                                    background: "rgba(16,185,129,0.06)",
+                                    color: "#10b981",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  Free
+                                </button>
+                              )}
                               {driver.license_number && (
                                 <span
                                   style={{
@@ -1514,6 +1584,18 @@ export default function SettingsPage() {
                             { label: "Phone", value: selectedDriver.phone || "—" },
                             { label: "Email", value: selectedDriver.email || "—" },
                             { label: "License", value: selectedDriver.license_number || "—", mono: true },
+                            { label: "Home Address", value: selectedDriver.home_address || "—" },
+                            { label: "Home City", value: selectedDriver.home_city || "—" },
+                            { label: "Driver Status", value:
+                              selectedDriver.driver_status === "idle_at_home" ? "At Home" :
+                              selectedDriver.driver_status === "idle_at_depot" ? `At Depot${selectedDriver.current_city ? ` (${selectedDriver.current_city})` : ""}` :
+                              selectedDriver.driver_status === "assigned" ? "Assigned" :
+                              selectedDriver.driver_status === "en_route" ? "En Route" :
+                              selectedDriver.driver_status || "—"
+                            },
+                            { label: "Current City", value: selectedDriver.current_city || "—" },
+                            { label: "Home Coords", value: selectedDriver.home_lat && selectedDriver.home_lng ? `${selectedDriver.home_lat.toFixed(4)}, ${selectedDriver.home_lng.toFixed(4)}` : "—", mono: true },
+                            { label: "Current Coords", value: selectedDriver.current_lat && selectedDriver.current_lng ? `${selectedDriver.current_lat.toFixed(4)}, ${selectedDriver.current_lng.toFixed(4)}` : "—", mono: true },
                             {
                               label: "Registered",
                               value: selectedDriver.created_at
@@ -1652,6 +1734,117 @@ export default function SettingsPage() {
                             >
                               {togglingOnline ? <Loader2 size={14} className="spin" /> : selectedDriver.is_online ? <ToggleLeft size={14} /> : <ToggleRight size={14} />}
                               {selectedDriver.is_online ? "Set offline" : "Set online"}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* ─── Admin Edit Section ─── */}
+                        <div
+                          style={{
+                            padding: "16px 18px",
+                            borderRadius: 12,
+                            background: "var(--bg-secondary)",
+                            border: "1px solid var(--border-primary)",
+                          }}
+                        >
+                          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>
+                            <Edit size={14} style={{ color: "#635BFF" }} /> Edit Driver Details
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                            <div>
+                              <label style={{ fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, display: "block" }}>Name</label>
+                              <input
+                                defaultValue={selectedDriver.name || ""}
+                                id="admin-edit-name"
+                                className="input"
+                                style={{ width: "100%", fontSize: 13, padding: "8px 12px" }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, display: "block" }}>Email</label>
+                              <input
+                                defaultValue={selectedDriver.email || ""}
+                                id="admin-edit-email"
+                                className="input"
+                                style={{ width: "100%", fontSize: 13, padding: "8px 12px" }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, display: "block" }}>License Number</label>
+                              <input
+                                defaultValue={selectedDriver.license_number || ""}
+                                id="admin-edit-license"
+                                className="input"
+                                style={{ width: "100%", fontSize: 13, padding: "8px 12px" }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, display: "block" }}>Home Address</label>
+                              <input
+                                defaultValue={selectedDriver.home_address || ""}
+                                id="admin-edit-home-address"
+                                placeholder="e.g. Andheri East, Mumbai, Maharashtra"
+                                className="input"
+                                style={{ width: "100%", fontSize: 13, padding: "8px 12px" }}
+                              />
+                              <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginTop: 3 }}>
+                                Changing this will re-geocode and update home city/coordinates
+                              </div>
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, display: "block" }}>Driver Status</label>
+                              <select
+                                defaultValue={selectedDriver.driver_status || "idle_at_home"}
+                                id="admin-edit-status"
+                                className="input"
+                                style={{ width: "100%", fontSize: 13, padding: "8px 12px", cursor: "pointer" }}
+                              >
+                                <option value="idle_at_home">Idle at Home</option>
+                                <option value="idle_at_depot">Idle at Depot</option>
+                                <option value="assigned">Assigned</option>
+                                <option value="en_route">En Route</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4, display: "block" }}>Current City (manual override)</label>
+                              <input
+                                defaultValue={selectedDriver.current_city || ""}
+                                id="admin-edit-current-city"
+                                placeholder="e.g. Pune"
+                                className="input"
+                                style={{ width: "100%", fontSize: 13, padding: "8px 12px" }}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const name = (document.getElementById("admin-edit-name") as HTMLInputElement)?.value?.trim();
+                                const email = (document.getElementById("admin-edit-email") as HTMLInputElement)?.value?.trim();
+                                const license = (document.getElementById("admin-edit-license") as HTMLInputElement)?.value?.trim();
+                                const homeAddr = (document.getElementById("admin-edit-home-address") as HTMLInputElement)?.value?.trim();
+                                const status = (document.getElementById("admin-edit-status") as HTMLSelectElement)?.value;
+                                const currentCity = (document.getElementById("admin-edit-current-city") as HTMLInputElement)?.value?.trim();
+                                const payload: Record<string, any> = {};
+                                if (name && name !== selectedDriver.name) payload.name = name;
+                                if (email !== (selectedDriver.email || "")) payload.email = email;
+                                if (license !== (selectedDriver.license_number || "")) payload.license_number = license;
+                                if (homeAddr && homeAddr !== (selectedDriver.home_address || "")) payload.home_address = homeAddr;
+                                if (status && status !== selectedDriver.driver_status) payload.driver_status = status;
+                                if (currentCity !== (selectedDriver.current_city || "")) payload.current_city = currentCity;
+                                if (Object.keys(payload).length === 0) {
+                                  showToastMsg("No changes to save");
+                                  return;
+                                }
+                                updateDriverProfile(selectedDriver.id, payload).then((updated) => {
+                                  showToastMsg("Driver updated successfully");
+                                  setSelectedDriver({ ...selectedDriver, ...updated });
+                                  refreshDrivers();
+                                }).catch(() => showToastMsg("Failed to update driver"));
+                              }}
+                              className="btn btn-primary btn-sm"
+                              style={{ alignSelf: "flex-start", marginTop: 4 }}
+                            >
+                              <Save size={13} /> Save Changes
                             </button>
                           </div>
                         </div>

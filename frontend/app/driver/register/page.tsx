@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { User, Phone, Mail, Lock, CreditCard, Loader2, ArrowRight } from "lucide-react";
+import { User, Phone, Mail, Lock, CreditCard, Loader2, ArrowRight, MapPin } from "lucide-react";
 import { registerDriver } from "@/lib/api";
 
 export default function DriverRegisterPage() {
@@ -11,6 +11,7 @@ export default function DriverRegisterPage() {
   const [form, setForm] = useState({
     name: "",
     phone: "",
+    home_address: "",
     email: "",
     password: "",
     license_number: "",
@@ -41,6 +42,7 @@ export default function DriverRegisterPage() {
   const fields = [
     { key: "name", label: "Full Name", icon: User, type: "text", placeholder: "Enter your full name", required: true },
     { key: "phone", label: "Phone Number", icon: Phone, type: "tel", placeholder: "Enter phone number", required: true },
+    { key: "home_address", label: "Home Address", icon: MapPin, type: "text", placeholder: "e.g. Andheri East, Mumbai, Maharashtra", required: true },
     { key: "email", label: "Email Address", icon: Mail, type: "email", placeholder: "Enter email (optional)", required: false },
     { key: "password", label: "Password", icon: Lock, type: "password", placeholder: "Create a password", required: true },
     { key: "license_number", label: "License Number", icon: CreditCard, type: "text", placeholder: "Driving license (optional)", required: false },

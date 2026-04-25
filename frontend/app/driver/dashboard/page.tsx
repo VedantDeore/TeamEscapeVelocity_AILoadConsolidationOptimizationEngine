@@ -7,7 +7,7 @@ import {
   Package, RefreshCw, UserCircle, Settings,
 } from "lucide-react";
 import {
-  toggleDriverOnline, getDriverTasks, updateDriverLocation,
+  toggleDriverOnline, getDriverTasks, updateDriverLocation, listDrivers,
 } from "@/lib/api";
 
 interface DriverTask {
@@ -30,6 +30,8 @@ export default function DriverDashboardPage() {
   const [toggling, setToggling] = useState(false);
   const [tasks, setTasks] = useState<DriverTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [driverStatus, setDriverStatus] = useState<string>("idle_at_home");
+  const [effectiveCity, setEffectiveCity] = useState<string>("");
   const gpsWatchRef = useRef<number | null>(null);
   const lastGpsPushRef = useRef<number>(0);
 
@@ -79,6 +81,17 @@ export default function DriverDashboardPage() {
     }
   }, [router]);
 
+  useEffect(() => {
+    if (!driverId) return;
+    listDrivers().then((drivers) => {
+      const me = drivers.find((d: any) => d.id === driverId);
+      if (me) {
+        setDriverStatus(me.driver_status || "idle_at_home");
+        setEffectiveCity(me.current_city || me.home_city || "");
+      }
+    }).catch(() => {});
+  }, [driverId]);
+
   const loadTasks = useCallback(async () => {
     if (!driverId) return;
     setLoading(true);
@@ -124,11 +137,30 @@ export default function DriverDashboardPage() {
       {/* Greeting + Profile Link */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ paddingTop: 12 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>
-            Hello, {driverName}
-          </h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>
+              Hello, {driverName}
+            </h1>
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+              background: driverStatus === "idle_at_home" ? "rgba(16,185,129,0.12)" :
+                driverStatus === "idle_at_depot" ? "rgba(245,158,11,0.12)" :
+                driverStatus === "assigned" ? "rgba(99,91,255,0.12)" :
+                driverStatus === "en_route" ? "rgba(14,165,233,0.12)" : "rgba(100,116,139,0.12)",
+              color: driverStatus === "idle_at_home" ? "#10b981" :
+                driverStatus === "idle_at_depot" ? "#f59e0b" :
+                driverStatus === "assigned" ? "#635BFF" :
+                driverStatus === "en_route" ? "#0ea5e9" : "#64748b",
+            }}>
+              {driverStatus === "idle_at_home" ? "At Home" :
+               driverStatus === "idle_at_depot" ? `At Depot${effectiveCity ? ` (${effectiveCity})` : ""}` :
+               driverStatus === "assigned" ? "Assigned" :
+               driverStatus === "en_route" ? "En Route" : driverStatus}
+            </span>
+          </div>
           <p style={{ fontSize: 13, color: "#64748b" }}>
             {isOnline ? "You are online and available" : "Go online to receive tasks"}
+            {effectiveCity && ` · ${effectiveCity}`}
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>

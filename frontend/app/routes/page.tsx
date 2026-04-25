@@ -24,9 +24,10 @@ import {
   Play,
   User,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { type Route as RouteType } from "@/lib/mock-data";
-import { getRoutes, getNearbyDrivers, getDriverLocations, assignDriverTask, updateDriverLocation, autoAssignDrivers, type NearbyDriver, type DriverLocation, type DriverAssignment } from "@/lib/api";
+import { getRoutes, getNearbyDrivers, assignDriverTask, updateDriverLocation, autoAssignDrivers, simulateCompleteTask, getRouteAssignments, startDriverTask, getAllDriverPositions, getLiveJourneyPositions, type NearbyDriver, type DriverAssignment, type DriverPosition, type LiveJourneyPosition } from "@/lib/api";
 import type { TruckSimulation, LiveDriver } from "@/components/ui/LeafletMap";
 import type { SimulationState } from "@/components/ui/SimulationPanel";
 
@@ -228,39 +229,94 @@ export default function RoutesPage() {
     if (!liveMode) {
       if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
       liveIntervalRef.current = null;
+      if (liveJourneyRef.current) clearInterval(liveJourneyRef.current);
+      liveJourneyRef.current = null;
       setLiveDrivers([]);
+      setLiveJourneyPositions([]);
       return;
     }
     const poll = async () => {
       try {
-        const data = await getDriverLocations();
-        setLiveDrivers(data || []);
+        const [positionsData, journeyData] = await Promise.all([
+          getAllDriverPositions(),
+          getLiveJourneyPositions(),
+        ]);
+        const journeyDriverIds = new Set((journeyData || []).map((j: LiveJourneyPosition) => j.driver_id));
+        const combined: LiveDriver[] = [];
+        for (const j of (journeyData || [])) {
+          combined.push({
+            driver_id: j.driver_id,
+            name: `${j.name} (${Math.round(j.progress_pct)}%)`,
+            is_online: j.is_online,
+            lat: j.lat, lng: j.lng,
+            heading: null, speed_kmh: 0,
+          });
+        }
+        for (const d of (positionsData || [])) {
+          if (!journeyDriverIds.has(d.driver_id)) {
+            const statusLabel = d.driver_status === "idle_at_home" ? "Home"
+              : d.driver_status === "idle_at_depot" ? "Depot"
+              : d.driver_status === "assigned" ? "Assigned"
+              : d.driver_status;
+            combined.push({
+              driver_id: d.driver_id,
+              name: `${d.name} (${statusLabel})`,
+              is_online: d.is_online,
+              lat: d.lat, lng: d.lng,
+              heading: null, speed_kmh: 0,
+            });
+          }
+        }
+        setLiveDrivers(combined);
+        setLiveJourneyPositions(journeyData || []);
       } catch { /* silent */ }
     };
     poll();
     liveIntervalRef.current = setInterval(poll, 5000);
-    return () => { if (liveIntervalRef.current) clearInterval(liveIntervalRef.current); };
+    return () => {
+      if (liveIntervalRef.current) clearInterval(liveIntervalRef.current);
+      if (liveJourneyRef.current) clearInterval(liveJourneyRef.current);
+    };
   }, [liveMode]);
 
-  // ─── Driver Assignments (auto-assigned) ────────────────
+  // ─── Driver Assignments (persisted) ────────────────────
   const [routeDriverMap, setRouteDriverMap] = useState<Record<string, DriverAssignment>>({});
   const [autoAssigning, setAutoAssigning] = useState(false);
+  const [showAllDrivers, setShowAllDrivers] = useState(false);
+  const [allDriverPositions, setAllDriverPositions] = useState<DriverPosition[]>([]);
+  const [liveJourneyPositions, setLiveJourneyPositions] = useState<LiveJourneyPosition[]>([]);
+  const liveJourneyRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const buildDriverMap = useCallback((assignments: DriverAssignment[]) => {
+    const map: Record<string, DriverAssignment> = {};
+    for (const a of assignments) map[a.route_id] = a;
+    setRouteDriverMap(map);
+  }, []);
+
+  // On routes change, fetch EXISTING assignments (no new creation)
   useEffect(() => {
+    if (routes.length === 0) { setRouteDriverMap({}); return; }
+    const routeIds = routes.map((r) => r.id);
+    setAutoAssigning(true);
+    getRouteAssignments(routeIds)
+      .then((result) => buildDriverMap(result.assignments))
+      .catch(() => {})
+      .finally(() => setAutoAssigning(false));
+  }, [routes, buildDriverMap]);
+
+  // Explicit "Assign Drivers" — only called on button click
+  const handleAutoAssign = useCallback((force = false) => {
     if (routes.length === 0) return;
     const routeIds = routes.map((r) => r.id);
     setAutoAssigning(true);
-    autoAssignDrivers(routeIds)
+    autoAssignDrivers(routeIds, force)
       .then((result) => {
-        const map: Record<string, DriverAssignment> = {};
-        for (const a of result.assignments) {
-          map[a.route_id] = a;
-        }
-        setRouteDriverMap(map);
+        console.log("[AutoAssign] result:", result);
+        buildDriverMap(result.assignments);
       })
-      .catch(() => {})
+      .catch((err) => console.error("[AutoAssign] error:", err))
       .finally(() => setAutoAssigning(false));
-  }, [routes]);
+  }, [routes, buildDriverMap]);
 
   // ─── Simulation Engine ─────────────────────────────────
   const [showSimPanel, setShowSimPanel] = useState(false);
@@ -349,6 +405,12 @@ export default function RoutesPage() {
     if (!selectedRoute) return;
     const points = selectedRoute.points;
     if (points.length < 2) return;
+
+    // Mark task as started (en_route) in the backend
+    const taskId = routeDriverMap[selectedRoute.id]?.task_id;
+    if (taskId) {
+      startDriverTask(taskId).catch(() => {});
+    }
 
     // Fetch OSRM road route
     const { fetchRoadRoute } = await import("@/components/ui/LeafletMap");
@@ -569,7 +631,7 @@ export default function RoutesPage() {
     };
 
     simRef.current.animFrameId = requestAnimationFrame(animate);
-  }, [selectedRoute, assignedDriver]);
+  }, [selectedRoute, assignedDriver, routeDriverMap]);
 
   const handleSimPlay = useCallback(() => {
     if (simState.phase === "assigned" || simState.phase === "idle") {
@@ -602,6 +664,28 @@ export default function RoutesPage() {
       phase: "idle",
     });
   }, []);
+
+  // When simulation completes, mark task as complete in backend (updates driver location)
+  const simCompletedRef = useRef(false);
+  useEffect(() => {
+    if (simState.phase === "completed" && !simCompletedRef.current) {
+      simCompletedRef.current = true;
+      if (selectedRoute) {
+        const taskId = routeDriverMap[selectedRoute.id]?.task_id;
+        if (taskId) {
+          simulateCompleteTask(taskId).then(() => {
+            const routeIds = routes.map((r) => r.id);
+            getRouteAssignments(routeIds).then((result) => {
+              buildDriverMap(result.assignments);
+            }).catch(() => {});
+          }).catch(() => {});
+        }
+      }
+    }
+    if (simState.phase !== "completed") {
+      simCompletedRef.current = false;
+    }
+  }, [simState.phase, selectedRoute, routeDriverMap, routes, buildDriverMap]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -925,7 +1009,17 @@ export default function RoutesPage() {
                   viewMode={viewMode}
                   mapTheme={mapTheme}
                   truckSimulation={truckSim}
-                  liveDrivers={liveMode ? liveDrivers : undefined}
+                  liveDrivers={
+                    liveMode ? liveDrivers :
+                    showAllDrivers ? allDriverPositions.map((d) => ({
+                      driver_id: d.driver_id,
+                      name: `${d.name} (${d.driver_status === "idle_at_home" ? "Home" : d.driver_status === "idle_at_depot" ? "Depot" : d.driver_status === "assigned" ? "Assigned" : d.driver_status === "en_route" ? "En Route" : d.driver_status})`,
+                      is_online: d.is_online,
+                      lat: d.lat, lng: d.lng,
+                      heading: null, speed_kmh: 0,
+                    })) :
+                    undefined
+                  }
                 />
 
                 {/* Overlay badges */}
@@ -1286,33 +1380,20 @@ export default function RoutesPage() {
                     flexShrink: 0,
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div>
-                      <div
-                        style={{
-                          fontSize: "14px",
-                          fontWeight: 700,
-                          color: "var(--text-primary)",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                        }}
-                      >
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{
+                        fontSize: "14px", fontWeight: 700, color: "var(--text-primary)",
+                        display: "flex", alignItems: "center", gap: 6,
+                      }}>
                         <Truck size={15} style={{ color: "#635BFF" }} />
                         Route Details
                       </div>
-                      <div
-                        style={{
-                          fontSize: "11px",
-                          color: "var(--text-tertiary)",
-                          marginTop: "2px",
-                        }}
-                      >
+                      <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
                         {routes.length} routes · Click to expand
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      {/* Live Data Toggle */}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
                       <button
                         onClick={(e) => { e.stopPropagation(); setLiveMode((v) => !v); }}
                         style={{
@@ -1335,6 +1416,70 @@ export default function RoutesPage() {
                             background: "#10b981", color: "#fff", borderRadius: 4,
                             padding: "0 4px", fontSize: 9, marginLeft: 2,
                           }}>{liveDrivers.length}</span>
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleAutoAssign(false); }}
+                        disabled={autoAssigning || routes.length === 0}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 4,
+                          padding: "5px 10px", borderRadius: 8,
+                          border: "1px solid rgba(99,91,255,0.3)",
+                          background: autoAssigning ? "rgba(99,91,255,0.15)" : "rgba(99,91,255,0.06)",
+                          color: "#a78bfa", cursor: autoAssigning ? "wait" : "pointer",
+                          fontSize: 10, fontWeight: 700, whiteSpace: "nowrap",
+                        }}
+                      >
+                        {autoAssigning ? <Loader2 size={10} style={{ animation: "spin 1s linear infinite" }} /> : <User size={10} />}
+                        {autoAssigning ? "Assigning…" : "Assign Drivers"}
+                      </button>
+                      {Object.keys(routeDriverMap).length > 0 && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleAutoAssign(true); }}
+                          disabled={autoAssigning}
+                          title="Clear current assignments and reassign based on GPS location"
+                          style={{
+                            display: "flex", alignItems: "center", gap: 4,
+                            padding: "5px 8px", borderRadius: 8,
+                            border: "1px solid rgba(245,158,11,0.3)",
+                            background: "rgba(245,158,11,0.06)",
+                            color: "#f59e0b", cursor: "pointer",
+                            fontSize: 10, fontWeight: 700, whiteSpace: "nowrap",
+                          }}
+                        >
+                          <RefreshCw size={10} />
+                          Reassign
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (showAllDrivers) {
+                            setShowAllDrivers(false);
+                            setAllDriverPositions([]);
+                          } else {
+                            getAllDriverPositions().then((data) => {
+                              setAllDriverPositions(data || []);
+                              setShowAllDrivers(true);
+                            }).catch(() => {});
+                          }
+                        }}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 4,
+                          padding: "5px 10px", borderRadius: 8,
+                          border: showAllDrivers ? "1px solid rgba(14,165,233,0.4)" : "1px solid var(--border-primary)",
+                          background: showAllDrivers ? "rgba(14,165,233,0.1)" : "transparent",
+                          color: showAllDrivers ? "#0ea5e9" : "var(--text-secondary)",
+                          cursor: "pointer", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap",
+                        }}
+                      >
+                        <MapPin size={10} />
+                        {showAllDrivers ? "Hide Drivers" : "All Drivers"}
+                        {showAllDrivers && allDriverPositions.length > 0 && (
+                          <span style={{
+                            background: "#0ea5e9", color: "#fff", borderRadius: 4,
+                            padding: "0 4px", fontSize: 9, marginLeft: 2,
+                          }}>{allDriverPositions.length}</span>
                         )}
                       </button>
                       {/* Simulate Button */}
@@ -1490,35 +1635,89 @@ export default function RoutesPage() {
                               </span>
                             </div>
                             {routeDriverMap[route.id] && (
-                              <div style={{
-                                display: "flex", alignItems: "center", gap: 5,
-                                marginTop: 3,
-                              }}>
-                                {routeDriverMap[route.id].driver_avatar ? (
-                                  <img
-                                    src={routeDriverMap[route.id].driver_avatar!}
-                                    alt=""
-                                    style={{ width: 16, height: 16, borderRadius: "50%", objectFit: "cover" }}
-                                  />
-                                ) : (
+                              <div style={{ marginTop: 3 }}>
+                                <div style={{
+                                  display: "flex", alignItems: "center", gap: 5,
+                                }}>
+                                  {routeDriverMap[route.id].driver_avatar ? (
+                                    <img
+                                      src={routeDriverMap[route.id].driver_avatar!}
+                                      alt=""
+                                      style={{ width: 16, height: 16, borderRadius: "50%", objectFit: "cover" }}
+                                    />
+                                  ) : (
+                                    <div style={{
+                                      width: 16, height: 16, borderRadius: "50%",
+                                      background: "linear-gradient(135deg, #635BFF, #8b5cf6)",
+                                      display: "flex", alignItems: "center", justifyContent: "center",
+                                      fontSize: 8, fontWeight: 800, color: "#fff",
+                                    }}>
+                                      {routeDriverMap[route.id].driver_name.charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <span style={{ fontSize: 10, fontWeight: 600, color: "#a78bfa" }}>
+                                    {routeDriverMap[route.id].driver_name}
+                                  </span>
+                                  {routeDriverMap[route.id].city_match ? (
+                                    <span style={{
+                                      fontSize: 8, padding: "1px 4px", borderRadius: 3,
+                                      background: "rgba(16,185,129,0.12)", color: "#10b981", fontWeight: 700,
+                                    }}>City Match</span>
+                                  ) : routeDriverMap[route.id].deadhead_km > 0 ? (
+                                    <span style={{
+                                      fontSize: 8, padding: "1px 4px", borderRadius: 3,
+                                      background: "rgba(245,158,11,0.12)", color: "#f59e0b", fontWeight: 700,
+                                    }}>
+                                      {routeDriverMap[route.id].deadhead_km} km deadhead
+                                    </span>
+                                  ) : (
+                                    <span style={{
+                                      fontSize: 8, padding: "1px 4px", borderRadius: 3,
+                                      background: "rgba(16,185,129,0.12)", color: "#10b981", fontWeight: 700,
+                                    }}>
+                                      {routeDriverMap[route.id].distance_km < 1 ? "<1" : routeDriverMap[route.id].distance_km} km
+                                    </span>
+                                  )}
+                                  {routeDriverMap[route.id].task_id && routeDriverMap[route.id].task_status !== "completed" && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const taskId = routeDriverMap[route.id].task_id;
+                                        simulateCompleteTask(taskId).then(() => {
+                                          const routeIds = routes.map((r) => r.id);
+                                          getRouteAssignments(routeIds).then((result) => {
+                                            buildDriverMap(result.assignments);
+                                          }).catch(() => {});
+                                        }).catch(() => {});
+                                      }}
+                                      style={{
+                                        fontSize: 8, padding: "1px 5px", borderRadius: 3,
+                                        border: "1px solid rgba(99,91,255,0.3)",
+                                        background: "rgba(99,91,255,0.08)", color: "#a78bfa",
+                                        fontWeight: 700, cursor: "pointer", marginLeft: 2,
+                                      }}
+                                    >
+                                      Sim Complete
+                                    </button>
+                                  )}
+                                </div>
+                                {routeDriverMap[route.id].deadhead_km > 0 && !routeDriverMap[route.id].city_match && (
                                   <div style={{
-                                    width: 16, height: 16, borderRadius: "50%",
-                                    background: "linear-gradient(135deg, #635BFF, #8b5cf6)",
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    fontSize: 8, fontWeight: 800, color: "#fff",
+                                    fontSize: 9, color: "var(--text-tertiary)", marginTop: 2, marginLeft: 21,
                                   }}>
-                                    {routeDriverMap[route.id].driver_name.charAt(0).toUpperCase()}
+                                    Driver traveling {routeDriverMap[route.id].deadhead_km} km
+                                    {routeDriverMap[route.id].driver_city ? ` from ${routeDriverMap[route.id].driver_city}` : ""}
+                                    {` — deadhead cost ₹${routeDriverMap[route.id].deadhead_cost}`}
                                   </div>
                                 )}
-                                <span style={{ fontSize: 10, fontWeight: 600, color: "#a78bfa" }}>
-                                  {routeDriverMap[route.id].driver_name}
-                                </span>
-                                <span style={{
-                                  fontSize: 8, padding: "1px 4px", borderRadius: 3,
-                                  background: "rgba(16,185,129,0.12)", color: "#10b981", fontWeight: 700,
-                                }}>
-                                  {routeDriverMap[route.id].distance_km < 1 ? "<1" : routeDriverMap[route.id].distance_km} km
-                                </span>
+                                {routeDriverMap[route.id].total_driver_cost != null && routeDriverMap[route.id].total_driver_cost! > 0 && (
+                                  <div style={{
+                                    fontSize: 9, color: "var(--text-tertiary)", marginTop: 1, marginLeft: 21,
+                                  }}>
+                                    Driver cost: ₹{routeDriverMap[route.id].total_driver_cost}
+                                    {routeDriverMap[route.id].estimated_hours ? ` (${routeDriverMap[route.id].estimated_hours}h journey)` : ""}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>

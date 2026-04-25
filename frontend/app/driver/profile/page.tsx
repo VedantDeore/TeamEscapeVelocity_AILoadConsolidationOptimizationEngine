@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Camera, User, Phone, Mail, Shield, FileCheck, Save,
-  Loader2, ChevronLeft, Check, AlertCircle,
+  Loader2, ChevronLeft, Check, AlertCircle, MapPin, Navigation,
 } from "lucide-react";
 import { updateDriverProfile, listDrivers } from "@/lib/api";
 
@@ -16,6 +16,10 @@ export default function DriverProfilePage() {
   const [phone, setPhone] = useState("");
   const [license, setLicense] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [homeAddress, setHomeAddress] = useState("");
+  const [homeCity, setHomeCity] = useState("");
+  const [driverStatus, setDriverStatus] = useState("");
+  const [currentCity, setCurrentCity] = useState("");
   const [isVerified, setIsVerified] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -36,6 +40,10 @@ export default function DriverProfilePage() {
         setLicense(me.license_number || "");
         setAvatarUrl(me.avatar_url || "");
         setIsVerified(me.is_verified || false);
+        setHomeAddress(me.home_address || "");
+        setHomeCity(me.home_city || "");
+        setDriverStatus(me.driver_status || "idle_at_home");
+        setCurrentCity(me.current_city || "");
       }
     }).catch(() => {});
   }, [router]);
@@ -72,6 +80,7 @@ export default function DriverProfilePage() {
         email: email.trim() || undefined,
         license_number: license.trim() || undefined,
         avatar_url: avatarUrl || undefined,
+        home_address: homeAddress.trim() || undefined,
       });
       if (updated.name) localStorage.setItem("driver_name", updated.name);
       setSaved(true);
@@ -184,6 +193,34 @@ export default function DriverProfilePage() {
           />
         </FieldGroup>
 
+        <FieldGroup label="Home Address" icon={<MapPin size={15} color="#64748b" />}>
+          <input
+            value={homeAddress}
+            onChange={(e) => setHomeAddress(e.target.value)}
+            placeholder="e.g. Andheri East, Mumbai, Maharashtra"
+            style={inputStyle}
+          />
+        </FieldGroup>
+
+        {homeCity && (
+          <div style={{
+            padding: "10px 14px", borderRadius: 12,
+            background: "rgba(14,165,233,0.06)",
+            border: "1px solid rgba(14,165,233,0.12)",
+            display: "flex", alignItems: "center", gap: 10,
+          }}>
+            <Navigation size={15} color="#0ea5e9" />
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#0ea5e9" }}>
+                Home City: {homeCity}
+              </div>
+              <div style={{ fontSize: 11, color: "#64748b" }}>
+                Auto-detected from your address
+              </div>
+            </div>
+          </div>
+        )}
+
         <FieldGroup label="Driving License" icon={<FileCheck size={15} color="#64748b" />}>
           <input
             value={license}
@@ -192,6 +229,43 @@ export default function DriverProfilePage() {
             style={inputStyle}
           />
         </FieldGroup>
+
+        {/* Status badge */}
+        <div style={{
+          padding: "12px 14px", borderRadius: 12,
+          background: driverStatus === "idle_at_home" ? "rgba(16,185,129,0.08)" :
+            driverStatus === "idle_at_depot" ? "rgba(245,158,11,0.08)" :
+            driverStatus === "assigned" ? "rgba(99,91,255,0.08)" :
+            "rgba(14,165,233,0.08)",
+          border: `1px solid ${driverStatus === "idle_at_home" ? "rgba(16,185,129,0.2)" :
+            driverStatus === "idle_at_depot" ? "rgba(245,158,11,0.2)" :
+            "rgba(99,91,255,0.2)"}`,
+          display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <MapPin size={18} color={
+            driverStatus === "idle_at_home" ? "#10b981" :
+            driverStatus === "idle_at_depot" ? "#f59e0b" :
+            driverStatus === "assigned" ? "#635BFF" : "#0ea5e9"
+          } />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color:
+              driverStatus === "idle_at_home" ? "#10b981" :
+              driverStatus === "idle_at_depot" ? "#f59e0b" :
+              driverStatus === "assigned" ? "#635BFF" : "#0ea5e9"
+            }}>
+              {driverStatus === "idle_at_home" ? "At Home" :
+               driverStatus === "idle_at_depot" ? `At Depot${currentCity ? ` — ${currentCity}` : ""}` :
+               driverStatus === "assigned" ? "Assigned to Route" :
+               driverStatus === "en_route" ? "En Route" : driverStatus || "Unknown"}
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b" }}>
+              {driverStatus === "idle_at_home" ? "Available for assignment from home location" :
+               driverStatus === "idle_at_depot" ? "Waiting at destination depot for new assignment" :
+               driverStatus === "assigned" ? "Currently assigned — complete your task first" :
+               "Your current assignment status"}
+            </div>
+          </div>
+        </div>
 
         {/* Verification badge */}
         <div style={{
